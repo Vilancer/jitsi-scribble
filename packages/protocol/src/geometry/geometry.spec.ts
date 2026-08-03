@@ -134,7 +134,10 @@ describe('repairAspect', () => {
 describe('computeStrokeWidth', () => {
   it('scales a 4dp stroke down to ~1.038 for a portrait share pillarboxed into Jibri\'s 1280x720 box', () => {
     const C = contentRect(1080, 2340, 1280, 720, 'contain');
-    expect(C).toEqual({ x: 473.84615384615387, y: 0, w: 332.3076923076923, h: 720 });
+    expect(C.x).toBeCloseTo(473.846, 3);
+    expect(C.y).toBe(0);
+    expect(C.w).toBeCloseTo(332.308, 3);
+    expect(C.h).toBe(720);
     expect(computeStrokeWidth(4, C, { w: 1280, h: 720 })).toBeCloseTo(1.038, 3);
   });
 

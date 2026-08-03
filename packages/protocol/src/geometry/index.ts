@@ -102,3 +102,25 @@ export function repairAspect(
   if (d(1 / la, sa) <= 0.02) return { w: local.h, h: local.w };
   return { w: sent.w, h: sent.h };
 }
+
+/** Never render a stroke narrower than this, no matter how small fitRatio gets. */
+export const MIN_STROKE_WIDTH_PX = 1;
+
+/**
+ * Scales a rendered stroke width (GEO-06) by how much smaller the content
+ * rect is than the surface box it's drawn into — `fitRatio` is exactly 1
+ * (no change) when there is no letterbox/pillarbox at all, and drops toward
+ * ~0.26 for a portrait share pillarboxed into Jibri's fixed 1280x720
+ * recording box (PITFALLS.md Pitfall 7 point 6 / Pitfall 5d), so a 4dp
+ * stroke doesn't render as a blob on a ~332px-wide sliver. Never returns
+ * below MIN_STROKE_WIDTH_PX.
+ */
+export function computeStrokeWidth(
+  baseWidthDp: number,
+  C: ContentRect,
+  surfaceBox: { w: number; h: number },
+): number {
+  if (C.w <= 0 || C.h <= 0 || surfaceBox.w <= 0 || surfaceBox.h <= 0) return MIN_STROKE_WIDTH_PX;
+  const fitRatio = Math.min(C.w / surfaceBox.w, C.h / surfaceBox.h);
+  return Math.max(baseWidthDp * fitRatio, MIN_STROKE_WIDTH_PX);
+}
