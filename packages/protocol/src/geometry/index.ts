@@ -76,3 +76,29 @@ export function mapTouchToContent(
   }
   return { ok: true, point: { u, v } };
 }
+
+/**
+ * Android's rotation gap fix (GEO-04): `onDimensionsChange` reports raw
+ * unrotated frame dimensions and does not forward rotation to JS, so the
+ * displayed aspect can be transposed relative to `local`. `sent` is the
+ * sender's display-oriented `frame: {w,h}` carried on the wire `start`
+ * event (Plan 02-03's schema/codec supplies it at runtime — this function
+ * is purely the repair math, with no wire-format concern of its own).
+ *
+ * - `local` and `sent` agree (within a 0.02 log-ratio tolerance) -> `local`
+ *   unchanged.
+ * - `local`'s aspect matches the RECIPROCAL of `sent`'s (a rotation
+ *   transposition) -> `local` is swapped to `{w: local.h, h: local.w}`.
+ * - otherwise a genuinely different source -> trust the sender verbatim.
+ */
+export function repairAspect(
+  local: { w: number; h: number },
+  sent: { w: number; h: number },
+): { w: number; h: number } {
+  const la = local.w / local.h;
+  const sa = sent.w / sent.h;
+  const d = (x: number, y: number) => Math.abs(Math.log(x / y));
+  if (d(la, sa) <= 0.02) return local;
+  if (d(1 / la, sa) <= 0.02) return { w: local.h, h: local.w };
+  return { w: sent.w, h: sent.h };
+}
