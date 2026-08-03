@@ -1,0 +1,1 @@
+import type { JitsiConference } from 'lib-jitsi-meet';

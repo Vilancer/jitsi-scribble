@@ -1,0 +1,1 @@
+import { JitsiMeeting } from '@jitsi/react-native-sdk';

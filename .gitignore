@@ -141,3 +141,18 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Nx
+.nx/cache
+.nx/workspace-data
+.nx/polygraph
+.nx/self-healing
+.nx/migrate-runs
+tmp
+out-tsc
+
+# Nx-generated editor/agent integration files (not part of this project's own config)
+.cursor/rules/nx-rules.mdc
+.github/instructions/nx.instructions.md
+
+vitest.config.*.timestamp*
