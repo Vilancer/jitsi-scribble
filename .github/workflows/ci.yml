@@ -34,6 +34,9 @@ jobs:
       - name: Verify the publish shape against a local registry
         run: node packages/protocol/scripts/verify-publish-shape.mjs
 
+      - name: Run the cross-subpath resolution smoke test
+        run: node --experimental-strip-types apps/example/src/main.ts
+
   # Tag-triggered release job (PKG-07's release-gating half). Runs the
   # identical typecheck/lint/test step set first — the AND of all three
   # gates the publish step below, independent of the pull_request job's
