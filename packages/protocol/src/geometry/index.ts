@@ -69,7 +69,7 @@ export function mapTouchToContent(
   C: ContentRect,
   opts: { isStart: boolean },
 ): TransformResult {
-  if (C.w <= 0 || C.h <= 0) return { ok: false, reason: 'no-video-yet' };
+  if (!(C.w > 0) || !(C.h > 0)) return { ok: false, reason: 'no-video-yet' };
   const { u, v } = normalize(x, y, C);
   if (opts.isStart && (u < 0 || u > 1 || v < 0 || v > 1)) {
     return { ok: false, reason: 'out-of-bounds' };
@@ -120,7 +120,7 @@ export function computeStrokeWidth(
   C: ContentRect,
   surfaceBox: { w: number; h: number },
 ): number {
-  if (C.w <= 0 || C.h <= 0 || surfaceBox.w <= 0 || surfaceBox.h <= 0) return MIN_STROKE_WIDTH_PX;
+  if (!(C.w > 0) || !(C.h > 0) || !(surfaceBox.w > 0) || !(surfaceBox.h > 0)) return MIN_STROKE_WIDTH_PX;
   const fitRatio = Math.min(C.w / surfaceBox.w, C.h / surfaceBox.h);
   return Math.max(baseWidthDp * fitRatio, MIN_STROKE_WIDTH_PX);
 }
