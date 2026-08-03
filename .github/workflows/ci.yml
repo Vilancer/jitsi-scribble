@@ -2,6 +2,9 @@ name: CI
 
 on:
   pull_request:
+  push:
+    tags:
+      - 'v*'
 
 jobs:
   build-lint-test:
@@ -27,3 +30,55 @@ jobs:
 
       - name: Verify restricted-imports lint rules fire
         run: node packages/protocol/scripts/verify-lint-rules.mjs
+
+  # Tag-triggered release job (PKG-07's release-gating half). Runs the
+  # identical typecheck/lint/test step set first — the AND of all three
+  # gates the publish step below, independent of the pull_request job's
+  # completion (they're separate jobs on separate triggers) so a release
+  # never skips verification even if this push isn't also a pull_request.
+  #
+  # A re-run against an already-published version is EXPECTED to fail
+  # loudly: `nx release publish` surfaces npm's "cannot publish over
+  # previously published version" error rather than silently no-op'ing.
+  # That is the correct, non-silent behavior for a duplicate-tag mistake —
+  # it is not a bug to work around (T-02-04-02).
+  release:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck, lint, and test all projects
+        run: pnpm nx run-many -t typecheck lint test
+
+      - name: Verify restricted-imports lint rules fire
+        run: node packages/protocol/scripts/verify-lint-rules.mjs
+
+      # Only reached if every step above succeeded — the logical AND this
+      # plan's must-have truth requires. Registry/auth token come from a
+      # repo secret (NPM_TOKEN), never hardcoded and never this plan's own
+      # local-verdaccio testing script.
+      - name: Publish (nx release publish)
+        run: pnpm nx release publish
+        env:
+          NPM_CONFIG_PROVENANCE: 'true'
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
