@@ -47,8 +47,8 @@ const Coordinate = Schema.Number.pipe(Schema.int(), Schema.between(0, QUANT_STEP
 const Point = Schema.Tuple(Coordinate, Coordinate);
 
 const FrameDims = Schema.Struct({
-  w: Schema.Number,
-  h: Schema.Number,
+  w: Schema.Number.pipe(Schema.positive(), Schema.finite()),
+  h: Schema.Number.pipe(Schema.positive(), Schema.finite()),
 });
 
 const StartFrameSchema = Schema.Struct({

@@ -110,6 +110,9 @@ export function decode(raw: unknown): DecodeResult {
       const frame = obj.frame;
       if (!isPlainObject(frame)) return { ok: false, error: 'invalid-type' };
       if (typeof frame.w !== 'number' || typeof frame.h !== 'number') return { ok: false, error: 'invalid-type' };
+      if (!(frame.w > 0) || !(frame.h > 0) || !Number.isFinite(frame.w) || !Number.isFinite(frame.h)) {
+        return { ok: false, error: 'invalid-type' };
+      }
 
       return {
         ok: true,
