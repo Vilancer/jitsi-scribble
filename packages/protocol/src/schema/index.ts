@@ -19,8 +19,16 @@ import {
   MSG_MOVE,
   MSG_PRESENCE,
   MSG_START,
+  PROTOCOL_VERSION,
   QUANT_STEPS,
 } from '../wire-constants.js';
+
+/** Every member schema shares this exact-version literal — a frame whose `v`
+ * does not equal PROTOCOL_VERSION is rejected (`version-mismatch` on the
+ * codec side), never decoded under the current version's field-shape
+ * assumptions. Must agree with codec.decode()'s `v === PROTOCOL_VERSION`
+ * check (see roundtrip.spec.ts's accept/reject parity assertions). */
+const Version = Schema.Literal(PROTOCOL_VERSION);
 
 /** Every identifier field (`from`, `id`) shares the same length refinement,
  * counted as JS string .length (UTF-16 code units) — must agree with
@@ -44,7 +52,7 @@ const FrameDims = Schema.Struct({
 });
 
 const StartFrameSchema = Schema.Struct({
-  v: Schema.Number,
+  v: Version,
   t: Schema.Literal(MSG_START),
   from: Identifier,
   id: Identifier,
@@ -53,7 +61,7 @@ const StartFrameSchema = Schema.Struct({
 });
 
 const MoveFrameSchema = Schema.Struct({
-  v: Schema.Number,
+  v: Version,
   t: Schema.Literal(MSG_MOVE),
   from: Identifier,
   id: Identifier,
@@ -61,20 +69,20 @@ const MoveFrameSchema = Schema.Struct({
 });
 
 const EndFrameSchema = Schema.Struct({
-  v: Schema.Number,
+  v: Version,
   t: Schema.Literal(MSG_END),
   from: Identifier,
   id: Identifier,
 });
 
 const ClearFrameSchema = Schema.Struct({
-  v: Schema.Number,
+  v: Version,
   t: Schema.Literal(MSG_CLEAR),
   from: Identifier,
 });
 
 const PresenceFrameSchema = Schema.Struct({
-  v: Schema.Number,
+  v: Version,
   t: Schema.Literal(MSG_PRESENCE),
   from: Identifier,
   vis: Schema.Boolean,
