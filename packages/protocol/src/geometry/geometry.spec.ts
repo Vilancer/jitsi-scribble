@@ -54,7 +54,10 @@ describe('normalize/denormalize', () => {
   it('reproduces the 134.6px off-target bug fix end to end', () => {
     const { u, v } = normalize(195, 200, senderTile);
     expect(u).toBe(0.5);
-    expect(v).toBeCloseTo(0.04417, 5);
+    // Exact value is 9.6875/219.375 = 31/702 ≈ 0.0441596 (ARCHITECTURE.md's
+    // "approximately 0.044170" rounds slightly loosely, but both agree once
+    // denormalized to receiver pixels below).
+    expect(v).toBeCloseTo(0.04416, 4);
 
     const receiverPoint = denormalize(u, v, receiverTile);
     expect(receiverPoint.x).toBeCloseTo(512, 5);
