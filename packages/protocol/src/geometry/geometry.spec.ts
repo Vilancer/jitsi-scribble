@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { contentRect, denormalize, mapTouchToContent, normalize } from './index.js';
+import { contentRect, denormalize, mapTouchToContent, normalize, repairAspect } from './index.js';
 
 // See .planning/research/ARCHITECTURE.md section 3.7 for the off-target vector
 // this file's 'INTEG-04 regression matrix' block (added in Task 3) reproduces
@@ -100,5 +100,25 @@ describe('mapTouchToContent', () => {
       ok: false,
       reason: 'no-video-yet',
     });
+  });
+});
+
+describe('repairAspect', () => {
+  it('treats an exactly-equal local/sent aspect as agree and returns local unchanged', () => {
+    expect(repairAspect({ w: 1920, h: 1080 }, { w: 1920, h: 1080 })).toEqual({ w: 1920, h: 1080 });
+  });
+
+  it('treats a near-equal aspect (within the 0.02 log-ratio tolerance) as agree and returns local unchanged', () => {
+    expect(repairAspect({ w: 1920, h: 1080 }, { w: 1921, h: 1081 })).toEqual({ w: 1920, h: 1080 });
+  });
+
+  it('detects a rotation-transposed mismatch and swaps local.{w,h} to match the reciprocal of sent', () => {
+    // Android's onDimensionsChange reports raw unrotated dims (1920x1080)
+    // while the sender's display-oriented frame is portrait (1080x1920).
+    expect(repairAspect({ w: 1920, h: 1080 }, { w: 1080, h: 1920 })).toEqual({ w: 1080, h: 1920 });
+  });
+
+  it('trusts the sender verbatim on a genuinely different, non-reciprocal aspect pair', () => {
+    expect(repairAspect({ w: 100, h: 100 }, { w: 400, h: 300 })).toEqual({ w: 400, h: 300 });
   });
 });
