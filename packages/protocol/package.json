@@ -9,8 +9,33 @@
     "./package.json": "./package.json",
     ".": {
       "types": "./dist/index.d.ts",
+      "react-native": "./dist/index.js",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./codec": {
+      "types": "./dist/codec/index.d.ts",
+      "react-native": "./dist/codec/index.js",
+      "import": "./dist/codec/index.js",
+      "default": "./dist/codec/index.js"
+    },
+    "./schema": {
+      "types": "./dist/schema/index.d.ts",
+      "react-native": "./dist/schema/index.js",
+      "import": "./dist/schema/index.js",
+      "default": "./dist/schema/index.js"
+    },
+    "./geometry": {
+      "types": "./dist/geometry/index.d.ts",
+      "react-native": "./dist/geometry/index.js",
+      "import": "./dist/geometry/index.js",
+      "default": "./dist/geometry/index.js"
+    },
+    "./transport": {
+      "types": "./dist/transport/index.d.ts",
+      "react-native": "./dist/transport/index.js",
+      "import": "./dist/transport/index.js",
+      "default": "./dist/transport/index.js"
     }
   },
   "files": [

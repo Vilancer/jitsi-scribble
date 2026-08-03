@@ -8,4 +8,17 @@ describe('protocol package scaffold', () => {
     const mod = await import('./index.js');
     expect(mod).toBeDefined();
   });
+
+  it('root barrel re-exports codec/geometry/transport without an ambiguous name collision', async () => {
+    const mod = await import('./index.js');
+    expect(mod.__PLACEHOLDER__).toBe(true);
+    expect(mod.__CODEC_PLACEHOLDER__).toBe(true);
+    expect(mod.__GEOMETRY_PLACEHOLDER__).toBe(true);
+    expect(mod.__TRANSPORT_PLACEHOLDER__).toBe(true);
+  });
+
+  it('does not re-export ./schema from the root (keeps effect/Schema out of the RN entrypoint)', async () => {
+    const mod = await import('./index.js');
+    expect('__SCHEMA_PLACEHOLDER__' in mod).toBe(false);
+  });
 });

@@ -5,6 +5,18 @@
   "references": [
     {
       "path": "./packages/protocol"
+    },
+    {
+      "path": "./packages/react-native"
+    },
+    {
+      "path": "./packages/web"
+    },
+    {
+      "path": "./packages/native-overlay"
+    },
+    {
+      "path": "./apps/example"
     }
   ],
   "compilerOptions": {}
