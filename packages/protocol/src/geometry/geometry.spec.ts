@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { contentRect, denormalize, mapTouchToContent, normalize, repairAspect } from './index.js';
+import {
+  computeStrokeWidth,
+  contentRect,
+  denormalize,
+  mapTouchToContent,
+  MIN_STROKE_WIDTH_PX,
+  normalize,
+  repairAspect,
+} from './index.js';
 
 // See .planning/research/ARCHITECTURE.md section 3.7 for the off-target vector
 // this file's 'INTEG-04 regression matrix' block (added in Task 3) reproduces
@@ -120,5 +128,77 @@ describe('repairAspect', () => {
 
   it('trusts the sender verbatim on a genuinely different, non-reciprocal aspect pair', () => {
     expect(repairAspect({ w: 100, h: 100 }, { w: 400, h: 300 })).toEqual({ w: 400, h: 300 });
+  });
+});
+
+describe('computeStrokeWidth', () => {
+  it('scales a 4dp stroke down to ~1.038 for a portrait share pillarboxed into Jibri\'s 1280x720 box', () => {
+    const C = contentRect(1080, 2340, 1280, 720, 'contain');
+    expect(C).toEqual({ x: 473.84615384615387, y: 0, w: 332.3076923076923, h: 720 });
+    expect(computeStrokeWidth(4, C, { w: 1280, h: 720 })).toBeCloseTo(1.038, 3);
+  });
+
+  it('leaves a 4dp stroke unchanged (fitRatio=1) when the content rect fills the surface box exactly', () => {
+    const C = contentRect(1920, 1080, 1280, 720, 'contain');
+    expect(C).toEqual({ x: 0, y: 0, w: 1280, h: 720 });
+    expect(computeStrokeWidth(4, C, { w: 1280, h: 720 })).toBe(4);
+  });
+
+  it('floors at MIN_STROKE_WIDTH_PX against a degenerate content rect, never 0 or NaN', () => {
+    expect(computeStrokeWidth(4, { x: 0, y: 0, w: 0, h: 0 }, { w: 1280, h: 720 })).toBe(
+      MIN_STROKE_WIDTH_PX,
+    );
+    expect(MIN_STROKE_WIDTH_PX).toBe(1);
+  });
+});
+
+describe('INTEG-04 regression matrix', () => {
+  it('the 134.6px off-target vector, end to end (mapTouchToContent composed with denormalize)', () => {
+    const senderTile = contentRect(1920, 1080, 390, 600, 'contain');
+    const receiverTile = contentRect(1920, 1080, 1024, 768, 'contain');
+
+    const result = mapTouchToContent(195, 200, senderTile, { isStart: true });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('expected ok:true');
+
+    const receiverPoint = denormalize(result.point.u, result.point.v, receiverTile);
+    const prototypeWrongY = 200 / 600 /* the prototype's overlay-relative normalization */ * 768;
+    expect(prototypeWrongY).toBe(256);
+    expect(receiverPoint.y).toBeCloseTo(121.4, 1);
+    expect(prototypeWrongY - receiverPoint.y).toBeCloseTo(134.6, 1);
+  });
+
+  it('portrait-in-landscape: source 1080x1920 into box 800x450', () => {
+    expect(contentRect(1080, 1920, 800, 450, 'contain')).toEqual({
+      x: 273.4375,
+      y: 0,
+      w: 253.125,
+      h: 450,
+    });
+  });
+
+  it('landscape-in-portrait: source 1920x1080 into box 400x800', () => {
+    expect(contentRect(1920, 1080, 400, 800, 'contain')).toEqual({
+      x: 0,
+      y: 287.5,
+      w: 400,
+      h: 225,
+    });
+  });
+
+  it('equal-aspect: source 1920x1080 into box 800x450 fills the box exactly', () => {
+    expect(contentRect(1920, 1080, 800, 450, 'contain')).toEqual({
+      x: 0,
+      y: 0,
+      w: 800,
+      h: 450,
+    });
+  });
+
+  it('the four degenerate contentRect() inputs (zero/negative/NaN Fw or Fh)', () => {
+    expect(contentRect(0, 1080, 390, 600, 'contain')).toEqual({ x: 0, y: 0, w: 0, h: 0 });
+    expect(contentRect(1920, 0, 390, 600, 'contain')).toEqual({ x: 0, y: 0, w: 0, h: 0 });
+    expect(contentRect(-1, 1080, 390, 600, 'contain')).toEqual({ x: 0, y: 0, w: 0, h: 0 });
+    expect(contentRect(NaN, 1080, 390, 600, 'contain')).toEqual({ x: 0, y: 0, w: 0, h: 0 });
   });
 });
