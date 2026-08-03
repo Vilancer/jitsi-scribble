@@ -156,3 +156,7 @@ out-tsc
 .github/instructions/nx.instructions.md
 
 vitest.config.*.timestamp*
+
+# verify-publish-shape.mjs's isolated local verdaccio storage/scratch install
+# (never the public npm registry — see Plan 02-04's threat model T-02-04-01)
+.verdaccio-tmp/
