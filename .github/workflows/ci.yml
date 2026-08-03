@@ -31,6 +31,9 @@ jobs:
       - name: Verify restricted-imports lint rules fire
         run: node packages/protocol/scripts/verify-lint-rules.mjs
 
+      - name: Verify the publish shape against a local registry
+        run: node packages/protocol/scripts/verify-publish-shape.mjs
+
   # Tag-triggered release job (PKG-07's release-gating half). Runs the
   # identical typecheck/lint/test step set first — the AND of all three
   # gates the publish step below, independent of the pull_request job's
@@ -72,6 +75,9 @@ jobs:
 
       - name: Verify restricted-imports lint rules fire
         run: node packages/protocol/scripts/verify-lint-rules.mjs
+
+      - name: Verify the publish shape against a local registry
+        run: node packages/protocol/scripts/verify-publish-shape.mjs
 
       # Only reached if every step above succeeded — the logical AND this
       # plan's must-have truth requires. Registry/auth token come from a
