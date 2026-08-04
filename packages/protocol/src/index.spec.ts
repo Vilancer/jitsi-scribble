@@ -44,4 +44,10 @@ describe('protocol package scaffold', () => {
     expect('__SCHEMA_PLACEHOLDER__' in mod).toBe(false);
     expect('WireFrameSchema' in mod).toBe(false);
   });
+
+  it('root barrel re-exports the real core functions/classes (Plan 03-01)', async () => {
+    const mod = await import('./index.js');
+    expect(typeof mod.StrokeStore).toBe('function');
+    expect(typeof mod.computePhaseAndAlpha).toBe('function');
+  });
 });

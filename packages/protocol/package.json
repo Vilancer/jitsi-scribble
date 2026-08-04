@@ -39,6 +39,12 @@
       "react-native": "./dist/transport/index.js",
       "import": "./dist/transport/index.js",
       "default": "./dist/transport/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "react-native": "./dist/core/index.js",
+      "import": "./dist/core/index.js",
+      "default": "./dist/core/index.js"
     }
   },
   "files": [
