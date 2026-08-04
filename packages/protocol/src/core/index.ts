@@ -830,10 +830,17 @@ export class StrokeStore {
    * apply() (Plan 03-02's remote-ingest pipeline) does not exist yet. Real
    * remote strokes arrive through apply() once it is built; this method
    * exists solely so this plan's clear('mine')/clear(scope) tests can set up
-   * a mixed local+remote store without waiting on that pipeline. */
+   * a mixed local+remote store without waiting on that pipeline.
+   *
+   * WR-04: this is still a plain, public, shipped class method — nothing
+   * strips it from the published bundle — so it routes through
+   * `enforceCapsBeforeInsert` exactly like every real insert path
+   * (beginLocal / apply()'s MSG_START / apply()'s MSG_MOVE orphan-insert),
+   * so it can never be used, even by mistake, to bypass D-03/D-04's caps. */
   __testInsertRemote(from: string, id: string, points: readonly (readonly [number, number])[] = []): void {
     Effect.runSync(
       Ref.update(this.state, (s) => {
+        this.enforceCapsBeforeInsert(s.strokes, from);
         s.strokes.set(this.key(from, id), {
           id,
           from,
