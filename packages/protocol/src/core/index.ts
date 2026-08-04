@@ -571,6 +571,14 @@ export class StrokeStore {
       case MSG_START: {
         Effect.runSync(
           Ref.update(this.state, (s) => {
+            const key = this.key(from, frame.id);
+            // WR-01: a duplicate/replayed Start for an already-open
+            // composite key must never reset the existing stroke — that
+            // would silently discard its accumulated points/endedAt/
+            // lastMoveAt AND let a sender dodge the globally-oldest-by-
+            // createdAt eviction cap by periodically re-sending Start to
+            // refresh its createdAt. Ignore the duplicate instead.
+            if (s.strokes.has(key)) return s;
             this.enforceCapsBeforeInsert(s.strokes, from);
             const internal: StrokeInternal = {
               id: frame.id,
@@ -584,7 +592,7 @@ export class StrokeStore {
               createdAt: this.lastTickNow,
               lastMoveAt: this.lastTickNow,
             };
-            s.strokes.set(this.key(from, frame.id), internal);
+            s.strokes.set(key, internal);
             return s;
           }),
         );
