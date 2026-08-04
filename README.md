@@ -19,7 +19,7 @@ This project is under active development. Current state, package by package:
 
 | Package | npm | Status |
 |---|---|---|
-| [`@vilancer/protocol`](packages/protocol) | [![npm](https://img.shields.io/npm/v/@vilancer/protocol)](https://www.npmjs.com/package/@vilancer/protocol) | **Published.** Coordinate normalization, wire protocol schema/codec, and transport — the shared foundation the client and web renderer build on. |
+| [`@vilancer/protocol`](packages/protocol) | [![npm](https://img.shields.io/npm/v/@vilancer/protocol)](https://www.npmjs.com/package/@vilancer/protocol) | **Published** (still at `0.0.1` — not yet re-published with Phase 3's additions below). Coordinate normalization, wire protocol schema/codec, transport, and a render-agnostic stroke-lifecycle store (start/move/end/clear, hold/fade timing, defensive caps, rate limiting, outbound move coalescing) — the shared foundation the client and web renderer build on. |
 | `jitsi-scribble` (React Native client) | — | Placeholder. Real content (SVG stroke rendering + gesture capture + fade animation) lands in a later phase. |
 | `@jitsi-scribble/web` (DOM renderer) | — | Placeholder. Real content (the injected renderer for recordings/Jibri) lands in a later phase. |
 | `@jitsi-scribble/native-overlay` | — | Placeholder. Android out-of-app overlay (Expo module + config plugin) lands in a later phase. iOS gets a different, PiP-composited approach instead — see [Platform notes](#platform-notes). |
@@ -39,6 +39,7 @@ Subpath imports, so you only pull in what you use:
 import { encode, decode } from '@vilancer/protocol/codec';
 import { contentRect, mapTouchToContent } from '@vilancer/protocol/geometry';
 import { MemoryTransport, createMemoryTransportPair } from '@vilancer/protocol/transport';
+import { StrokeStore } from '@vilancer/protocol/core';
 import type { StartFrame } from '@vilancer/protocol/schema';
 ```
 
