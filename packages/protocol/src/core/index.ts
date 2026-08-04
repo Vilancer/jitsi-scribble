@@ -50,6 +50,17 @@ export const MAX_STROKES_PER_SENDER = 4 as const;
 export const MAX_TOTAL_STROKES = 16 as const;
 export const MAX_POINTS_PER_STROKE = 256 as const;
 
+/** D-04's per-sender receive-rate token-bucket capacity: ~3x the ~30 msg/s
+ * legitimate coalesced rate, chosen wide to absorb a stall-then-burst
+ * recovery pattern on the reliable-ordered, no-backpressure data channel
+ * (CORE-05, T-03-02-02) — a narrower threshold would misclassify that
+ * recovery burst as hostile. */
+export const RATE_CAPACITY = 90 as const;
+
+/** RATE_CAPACITY expressed as tokens-refilled-per-millisecond, for the
+ * token-bucket refill formula in checkRateLimit. */
+const RATE_PER_MS = RATE_CAPACITY / 1000;
+
 export interface FrameDims {
   readonly w: number;
   readonly h: number;
@@ -72,9 +83,21 @@ export interface Stroke {
   readonly alpha: number;
 }
 
-/** Internal-only stroke record — carries the raw timestamps `tick()` needs
- * to recompute phase/alpha, never exposed on the public Stroke shape. */
-interface StrokeInternal extends Stroke {
+/** Internal-only stroke record — a mutable working copy of `Stroke`'s
+ * fields (deliberately NOT `extends Stroke`, since every `Stroke` field is
+ * `readonly` and this record is `tick()`/`apply()`'s mutation target; TS's
+ * interface-extension rules do not let a derived interface relax a
+ * `readonly` modifier declared on the base) plus the raw timestamps
+ * `tick()` needs to recompute phase/alpha. `toPublicStroke()` is the only
+ * place this shape is projected onto the public, readonly `Stroke` type. */
+interface StrokeInternal {
+  id: string;
+  from: string;
+  points: (readonly [number, number])[];
+  frame: FrameDims | undefined;
+  phase: 'live' | 'fading' | 'dead';
+  fadeStartedAt: number | undefined;
+  alpha: number;
   endedAt: number | undefined;
   lastMoveAt: number;
   createdAt: number;
@@ -160,6 +183,15 @@ function toPublicStroke(s: StrokeInternal): Stroke {
 export class StrokeStore {
   private readonly state: Ref.Ref<StoreState>;
   private readonly subscribers = new Set<(strokes: readonly Stroke[]) => void>();
+  /** Per-sender token buckets (D-04/CORE-05) — deliberately a plain `Map`
+   * OUTSIDE the `Ref`-wrapped StoreState, since it is bookkeeping, not
+   * shareable snapshot state, following the same "plain field beside the
+   * Ref" precedent transport/index.ts sets for its subscribers/stateListeners
+   * Sets. */
+  private readonly rateLimitBuckets = new Map<
+    string,
+    { tokens: number; lastRefillAt: number; warnedSinceRecovery: boolean }
+  >();
   private readonly holdMs: number;
   private readonly fadeMs: number;
   private readonly staleMs: number;
@@ -307,6 +339,42 @@ export class StrokeStore {
   }
 
   /**
+   * D-04's per-sender token-bucket receive rate limit (CORE-05,
+   * T-03-02-02). Gets-or-creates `from`'s bucket (a new bucket starts at
+   * full RATE_CAPACITY, so a brand-new sender's first message is always
+   * admitted), refills using floating-point arithmetic capped at
+   * RATE_CAPACITY via Math.min (fractional remainder retained between
+   * checks, never floored), and admits whenever tokens >= 1. Logs via
+   * console.warn a single line naming the sender ONLY on the first
+   * over-budget message of an episode (`warnedSinceRecovery` false ->
+   * true); a later admitted message re-arms it so a FUTURE over-budget
+   * episode logs again (log-once-per-episode, not permanent).
+   */
+  private checkRateLimit(from: string): boolean {
+    let bucket = this.rateLimitBuckets.get(from);
+    if (!bucket) {
+      bucket = { tokens: RATE_CAPACITY, lastRefillAt: this.lastTickNow, warnedSinceRecovery: false };
+      this.rateLimitBuckets.set(from, bucket);
+    }
+
+    const elapsed = this.lastTickNow - bucket.lastRefillAt;
+    bucket.tokens = Math.min(RATE_CAPACITY, bucket.tokens + elapsed * RATE_PER_MS);
+    bucket.lastRefillAt = this.lastTickNow;
+
+    if (bucket.tokens < 1) {
+      if (!bucket.warnedSinceRecovery) {
+        console.warn(`[jitsi-scribble] sender ${from} exceeded rate limit — dropping messages`);
+        bucket.warnedSinceRecovery = true;
+      }
+      return false;
+    }
+
+    bucket.tokens -= 1;
+    bucket.warnedSinceRecovery = false;
+    return true;
+  }
+
+  /**
    * The remote-ingest pipeline (CORE-04/05/06) — decodes and dispatches an
    * incoming wire payload from `from` into this same `StrokeInternal` map.
    * This task's version does NOT yet check a rate limit or a cap (Plan
@@ -327,6 +395,8 @@ export class StrokeStore {
    * `MSG_CLEAR`/`MSG_PRESENCE`: handled in Task 3.
    */
   apply(payload: unknown, from: string): void {
+    if (!this.checkRateLimit(from)) return;
+
     const result = decode(payload);
     if (!result.ok) return;
     const frame = result.frame;
@@ -410,9 +480,16 @@ export class StrokeStore {
         return;
       }
 
-      case MSG_CLEAR:
+      case MSG_CLEAR: {
+        // A remote Clear frame is scoped to its own sender — clear(from),
+        // never clear('all') (RESEARCH.md Open Question 2's three-variant
+        // clear(scope) signature). this.clear() already calls notify().
+        this.clear(from);
+        return;
+      }
+
       case MSG_PRESENCE:
-        // handled in Task 3
+        // no-op — AWARE-01/02/03 consume Presence in Phase 5, not here
         return;
     }
   }
@@ -496,7 +573,7 @@ export class StrokeStore {
         s.strokes.set(this.key(from, id), {
           id,
           from,
-          points,
+          points: [...points],
           frame: undefined,
           phase: 'live',
           fadeStartedAt: undefined,
