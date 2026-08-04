@@ -16,6 +16,9 @@
 import * as Effect from 'effect/Effect';
 import * as Ref from 'effect/Ref';
 
+import { decode } from '../codec/index.js';
+import { MSG_CLEAR, MSG_END, MSG_MOVE, MSG_PRESENCE, MSG_START, QUANT_MAX, QUANT_MIN, QUANT_STEPS } from '../wire-constants.js';
+
 /** A stroke holds at full opacity for this long (ms) after its effective end
  * time, before it starts fading (CORE-02). Half-open interval: at
  * `elapsed === HOLD_MS` exactly, the stroke has already moved into the
@@ -101,6 +104,30 @@ export function computePhaseAndAlpha(
     return { phase: 'fading', alpha: 1 - (elapsed - timing.holdMs) / timing.fadeMs };
   }
   return { phase: 'dead', alpha: 0 };
+}
+
+/**
+ * Maps a real-domain normalized coordinate (`wire-constants.ts`'s
+ * [QUANT_MIN, QUANT_MAX] = [-0.5, 1.5] domain) into the wire's 12-bit
+ * unsigned integer domain [0, QUANT_STEPS] (RESEARCH.md Pattern 4's exact
+ * linear-map formula). The `Math.min(Math.max(...))` clamp exists ONLY to
+ * keep the result inside the wire's representable integer range before
+ * rounding — a hard requirement, since an out-of-range integer would fail
+ * `codec.decode()`'s own validation on the receiving end. This does NOT
+ * contradict ARCHITECTURE.md section 3.6's "never clamp (u,v)" policy: that
+ * policy is about geometry's point-rejection semantics (whether to keep or
+ * drop a point), not about the wire's numeric encoding boundary.
+ */
+export function quantize(real: number): number {
+  const clamped = Math.min(Math.max(real, QUANT_MIN), QUANT_MAX);
+  return Math.round(((clamped - QUANT_MIN) / (QUANT_MAX - QUANT_MIN)) * QUANT_STEPS);
+}
+
+/** Inverse of `quantize` — maps a wire integer back into the real-domain
+ * normalized coordinate. `dequantize(quantize(x))` is within `1/QUANT_STEPS`
+ * of `x` for any `x` in `[QUANT_MIN, QUANT_MAX]` (RESEARCH.md Pattern 4). */
+export function dequantize(q: number): number {
+  return QUANT_MIN + (q / QUANT_STEPS) * (QUANT_MAX - QUANT_MIN);
 }
 
 function toPublicStroke(s: StrokeInternal): Stroke {
@@ -199,6 +226,112 @@ export class StrokeStore {
       }),
     );
     this.notify();
+  }
+
+  /**
+   * The remote-ingest pipeline (CORE-04/05/06) — decodes and dispatches an
+   * incoming wire payload from `from` into this same `StrokeInternal` map.
+   * This task's version does NOT yet check a rate limit or a cap (Plan
+   * 03-02 Tasks 2/3 add those as the FIRST statement and around each insert,
+   * respectively) — wired now so it never throws and always calls
+   * `decode(payload)` first.
+   *
+   * On decode failure: return silently (drop) — the malformed-payload
+   * threat is already `codec.decode()`'s job; `apply()` never re-validates.
+   *
+   * `MSG_START`: insert a new stroke keyed by the composite `${from} ${id}`.
+   * `MSG_MOVE`: look up the composite key — if found, append every
+   *   dequantized point; if NOT found (CORE-06's orphan case), synthesize a
+   *   new stroke with `frame: undefined` so an orphan move still renders.
+   * `MSG_END`: look up the composite key — if found and not yet ended, end
+   *   it exactly like `endLocal`; if NOT found, do nothing (an orphan `end`
+   *   is silently ignored — unlike `move`, no stroke is synthesized).
+   * `MSG_CLEAR`/`MSG_PRESENCE`: handled in Task 3.
+   */
+  apply(payload: unknown, from: string): void {
+    const result = decode(payload);
+    if (!result.ok) return;
+    const frame = result.frame;
+
+    switch (frame.t) {
+      case MSG_START: {
+        Effect.runSync(
+          Ref.update(this.state, (s) => {
+            const internal: StrokeInternal = {
+              id: frame.id,
+              from,
+              points: [[dequantize(frame.p[0]), dequantize(frame.p[1])]],
+              frame: { w: frame.frame.w, h: frame.frame.h },
+              phase: 'live',
+              fadeStartedAt: undefined,
+              alpha: 1,
+              endedAt: undefined,
+              createdAt: this.lastTickNow,
+              lastMoveAt: this.lastTickNow,
+            };
+            s.strokes.set(this.key(from, frame.id), internal);
+            return s;
+          }),
+        );
+        this.notify();
+        return;
+      }
+
+      case MSG_MOVE: {
+        Effect.runSync(
+          Ref.update(this.state, (s) => {
+            const key = this.key(from, frame.id);
+            const entry = s.strokes.get(key);
+            const dequantizedPoints = frame.pts.map(
+              ([u, v]): readonly [number, number] => [dequantize(u), dequantize(v)],
+            );
+            if (entry) {
+              entry.points = [...entry.points, ...dequantizedPoints];
+              entry.lastMoveAt = this.lastTickNow;
+            } else {
+              // CORE-06: an orphan move (no preceding start) synthesizes a
+              // new stroke rather than being discarded. No frame dims are
+              // available from the wire for this case (MoveFrameSchema
+              // carries no `frame` field) — frame stays undefined.
+              s.strokes.set(key, {
+                id: frame.id,
+                from,
+                points: dequantizedPoints,
+                frame: undefined,
+                phase: 'live',
+                fadeStartedAt: undefined,
+                alpha: 1,
+                endedAt: undefined,
+                createdAt: this.lastTickNow,
+                lastMoveAt: this.lastTickNow,
+              });
+            }
+            return s;
+          }),
+        );
+        this.notify();
+        return;
+      }
+
+      case MSG_END: {
+        Effect.runSync(
+          Ref.update(this.state, (s) => {
+            const entry = s.strokes.get(this.key(from, frame.id));
+            if (entry && entry.endedAt === undefined) {
+              entry.endedAt = this.lastTickNow;
+            }
+            return s;
+          }),
+        );
+        this.notify();
+        return;
+      }
+
+      case MSG_CLEAR:
+      case MSG_PRESENCE:
+        // handled in Task 3
+        return;
+    }
   }
 
   /**
