@@ -192,6 +192,43 @@ describe('StrokeStore.clear(scope) — D-05 instant-vanish (CORE-03, GEO-05)', (
   });
 });
 
+describe('StrokeStore — one implementation, many consumers (CORE-07)', () => {
+  it('three independent subscribers all fire, in registration order, on one tick() call', () => {
+    const store = new StrokeStore();
+    const calls: string[] = [];
+    store.subscribe(() => calls.push('fn1'));
+    store.subscribe(() => calls.push('fn2'));
+    store.subscribe(() => calls.push('fn3'));
+
+    store.tick(0);
+    expect(calls).toEqual(['fn1', 'fn2', 'fn3']);
+  });
+
+  it('unsubscribing the middle of three registered subscribers leaves the other two firing in order', () => {
+    const store = new StrokeStore();
+    const calls: string[] = [];
+    store.subscribe(() => calls.push('fn1'));
+    const unsub2 = store.subscribe(() => calls.push('fn2'));
+    store.subscribe(() => calls.push('fn3'));
+
+    unsub2();
+    store.tick(0);
+    expect(calls).toEqual(['fn1', 'fn3']);
+  });
+
+  it('a store on which subscribe() is never called still runs the full local lifecycle without throwing', () => {
+    const store = new StrokeStore();
+    expect(() => {
+      store.beginLocal('s1', { w: 1, h: 1 });
+      store.appendLocal('s1', 0.2, 0.3);
+      store.endLocal('s1');
+      store.tick(1000);
+      store.clear('all');
+      store.snapshot();
+    }).not.toThrow();
+  });
+});
+
 describe('computePhaseAndAlpha (pure function, CORE-01/CORE-02)', () => {
   it('no effective end yet -> live, alpha 1', () => {
     expect(computePhaseAndAlpha(500, { endedAt: undefined, lastMoveAt: 0 })).toEqual({
