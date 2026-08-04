@@ -647,10 +647,16 @@ export class StrokeStore {
       }
 
       case MSG_CLEAR: {
-        // A remote Clear frame is scoped to its own sender — clear(from),
-        // never clear('all') (RESEARCH.md Open Question 2's three-variant
-        // clear(scope) signature). this.clear() already calls notify().
-        this.clear(from);
+        // A remote Clear frame is scoped to its own sender — clearBySender(from),
+        // NEVER this.clear(from) (RESEARCH.md Open Question 2's three-variant
+        // clear(scope) signature). clear(scope)'s 'all'/'mine' sentinels are
+        // reserved for trusted, host-code callers only (CORE-03's seven local
+        // trigger sites); a wire-derived `from` that happens to collide with
+        // one of those sentinel strings must never be reinterpreted as a
+        // scope. clearBySender() never special-cases any string value, so it
+        // is the only safe routing for remote-ingest (CR-01).
+        // clearBySender() already calls notify().
+        this.clearBySender(from);
         return;
       }
 
@@ -745,6 +751,27 @@ export class StrokeStore {
             scope === 'all' ||
             (scope === 'mine' ? entry.from === LOCAL_SENDER : entry.from === scope);
           if (matches) s.strokes.delete(key);
+        }
+        return s;
+      }),
+    );
+    this.notify();
+  }
+
+  /**
+   * CR-01's dedicated remote-ingest Clear routing: deletes every stroke
+   * whose `.from === from`, with NO magic-string special-casing — unlike
+   * `clear(scope)`, an arbitrary wire-supplied `from` value can never be
+   * misread as the `'all'`/`'mine'` sentinels. `apply()`'s `MSG_CLEAR` branch
+   * must call this method, never `clear(from)`, so a sender whose id happens
+   * to literally be `"all"` or `"mine"` cannot escalate its own-sender clear
+   * into a global wipe (`"all"`) or a local-stroke wipe (`"mine"`).
+   */
+  private clearBySender(from: string): void {
+    Effect.runSync(
+      Ref.update(this.state, (s) => {
+        for (const [key, entry] of s.strokes) {
+          if (entry.from === from) s.strokes.delete(key);
         }
         return s;
       }),
