@@ -94,6 +94,18 @@ export const MOVE_COALESCE_TIME_MS = 33 as const;
  * 4 × 0.002667 ≈ 0.0107, rounded to 0.01. */
 export const MOVE_COALESCE_DISTANCE_EPSILON = 0.01 as const;
 
+/** PROTO-03's exact wire-size budget: a coalesced Move WireFrame, encoded via
+ * codec.encode(), must be at most this many bytes. Measured via
+ * codec.encode(frame).length — a JS string's UTF-16-code-unit .length used as
+ * a byte-count proxy; numerically exact for ASCII sender/stroke identifiers
+ * (the practical case for Jitsi participant ids and locally-generated stroke
+ * ids), unverified for non-ASCII ones (accepted, not closed, per this plan's
+ * own must_haves backstop truth). This is a coalescing-CADENCE target, not
+ * MAX_POINTS_PER_MESSAGE's job (RESEARCH.md Pitfall 2) — the coalescer must
+ * independently target a much smaller points-per-flush count than the
+ * decode-time 64-point safety ceiling. */
+export const MOVE_WIRE_BYTE_BUDGET = 600 as const;
+
 export interface FrameDims {
   readonly w: number;
   readonly h: number;
