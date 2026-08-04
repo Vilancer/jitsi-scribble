@@ -11,6 +11,8 @@ import {
   MAX_POINTS_PER_STROKE,
   MAX_STROKES_PER_SENDER,
   MAX_TOTAL_STROKES,
+  MOVE_COALESCE_DISTANCE_EPSILON,
+  MOVE_COALESCE_TIME_MS,
   quantize,
   RATE_CAPACITY,
   STALE_MS,
@@ -578,5 +580,182 @@ describe('StrokeStore per-sender receive rate limiting (CORE-05, D-04) + Clear/P
     expect(store.snapshot()).toEqual(before);
     expect(warnSpy).not.toHaveBeenCalled();
     warnSpy.mockRestore();
+  });
+});
+
+describe('StrokeStore.onOutbound — immediate start/end + move coalescing (PROTO-03)', () => {
+  it('exports the exact PROTO-03 coalescing constants', () => {
+    expect(MOVE_COALESCE_TIME_MS).toBe(33);
+    expect(MOVE_COALESCE_DISTANCE_EPSILON).toBe(0.01);
+  });
+
+  it('the FIRST appendLocal call after beginLocal immediately fires onOutbound once with a Start-shaped frame', () => {
+    const store = new StrokeStore();
+    const frames: unknown[] = [];
+    store.onOutbound((f) => frames.push(f));
+
+    store.beginLocal('s1', { w: 1920, h: 1080 });
+    store.appendLocal('s1', 0.5, 0.5);
+
+    expect(frames).toHaveLength(1);
+    expect(frames[0]).toMatchObject({
+      t: MSG_START,
+      from: LOCAL_SENDER,
+      id: 's1',
+      p: [quantize(0.5), quantize(0.5)],
+      frame: { w: 1920, h: 1080 },
+    });
+  });
+
+  it('a SECOND appendLocal call within the distance epsilon, no tick() in between, does NOT fire onOutbound again yet', () => {
+    const store = new StrokeStore();
+    const frames: unknown[] = [];
+    store.onOutbound((f) => frames.push(f));
+
+    store.beginLocal('s1', { w: 1, h: 1 });
+    store.appendLocal('s1', 0.5, 0.5);
+    store.appendLocal('s1', 0.5 + MOVE_COALESCE_DISTANCE_EPSILON / 2, 0.5);
+
+    expect(frames).toHaveLength(1); // only the Start
+  });
+
+  it('tick(now) at least MOVE_COALESCE_TIME_MS after the Start, with pending points, fires one Move with all pending points in order', () => {
+    const store = new StrokeStore();
+    const frames: any[] = [];
+    store.onOutbound((f) => frames.push(f));
+
+    store.tick(0);
+    store.beginLocal('s1', { w: 1, h: 1 });
+    store.appendLocal('s1', 0.5, 0.5); // Start, immediate
+    store.appendLocal('s1', 0.51, 0.5); // buffered
+    store.appendLocal('s1', 0.52, 0.5); // buffered
+
+    store.tick(MOVE_COALESCE_TIME_MS);
+
+    expect(frames).toHaveLength(2);
+    expect(frames[1]).toMatchObject({
+      t: MSG_MOVE,
+      from: LOCAL_SENDER,
+      id: 's1',
+      pts: [
+        [quantize(0.51), quantize(0.5)],
+        [quantize(0.52), quantize(0.5)],
+      ],
+    });
+  });
+
+  it('elapsed exactly MOVE_COALESCE_TIME_MS is a closed lower bound — it flushes, not just elapsed > MOVE_COALESCE_TIME_MS', () => {
+    const store = new StrokeStore();
+    const frames: any[] = [];
+    store.onOutbound((f) => frames.push(f));
+
+    store.tick(0);
+    store.beginLocal('s1', { w: 1, h: 1 });
+    store.appendLocal('s1', 0.5, 0.5); // Start at tick-now 0
+    store.appendLocal('s1', 0.501, 0.5); // buffered, within epsilon distance
+
+    store.tick(MOVE_COALESCE_TIME_MS); // elapsed since Start's lastFlushAt == MOVE_COALESCE_TIME_MS exactly
+
+    expect(frames.filter((f) => f.t === MSG_MOVE)).toHaveLength(1);
+  });
+
+  it('a point appended at distance >= epsilon from the last flushed point flushes on the NEXT tick() even if elapsed < MOVE_COALESCE_TIME_MS', () => {
+    const store = new StrokeStore();
+    const frames: any[] = [];
+    store.onOutbound((f) => frames.push(f));
+
+    store.tick(0);
+    store.beginLocal('s1', { w: 1, h: 1 });
+    store.appendLocal('s1', 0.5, 0.5); // Start
+    store.appendLocal('s1', 0.5 + MOVE_COALESCE_DISTANCE_EPSILON, 0.5); // far enough to trip distance flush
+
+    store.tick(1); // well under MOVE_COALESCE_TIME_MS
+
+    expect(frames.filter((f) => f.t === MSG_MOVE)).toHaveLength(1);
+  });
+
+  it('a tick() call with zero pending points fires zero onOutbound events for that stroke', () => {
+    const store = new StrokeStore();
+    const frames: any[] = [];
+
+    store.tick(0);
+    store.beginLocal('s1', { w: 1, h: 1 });
+    store.appendLocal('s1', 0.5, 0.5); // Start only, no buffered points
+
+    store.onOutbound((f) => frames.push(f)); // subscribe AFTER the Start already fired
+    store.tick(MOVE_COALESCE_TIME_MS + 100);
+
+    expect(frames).toHaveLength(0);
+  });
+
+  it("endLocal with pending unflushed points fires one final Move, THEN exactly one End — in that order", () => {
+    const store = new StrokeStore();
+    const frames: any[] = [];
+    store.onOutbound((f) => frames.push(f));
+
+    store.tick(0);
+    store.beginLocal('s1', { w: 1, h: 1 });
+    store.appendLocal('s1', 0.5, 0.5); // Start
+    store.appendLocal('s1', 0.6, 0.5); // buffered, never flushed by a tick()
+    store.endLocal('s1');
+
+    expect(frames.map((f) => f.t)).toEqual([MSG_START, MSG_MOVE, MSG_END]);
+    expect(frames[1].pts).toEqual([[quantize(0.6), quantize(0.5)]]);
+    expect(frames[2]).toMatchObject({ t: MSG_END, from: LOCAL_SENDER, id: 's1' });
+  });
+
+  it('applying a remote Start+Move via apply() never fires onOutbound, regardless of how many tick() calls follow', () => {
+    const store = new StrokeStore();
+    const frames: unknown[] = [];
+    store.onOutbound((f) => frames.push(f));
+
+    store.apply(
+      { v: PROTOCOL_VERSION, t: MSG_START, from: 'remote-1', id: 'r1', p: [2048, 2048], frame: { w: 1, h: 1 } },
+      'remote-1',
+    );
+    store.apply(
+      { v: PROTOCOL_VERSION, t: MSG_MOVE, from: 'remote-1', id: 'r1', pts: [[2100, 2100]] },
+      'remote-1',
+    );
+    store.tick(0);
+    store.tick(1000);
+    store.tick(MOVE_COALESCE_TIME_MS * 10);
+
+    expect(frames).toHaveLength(0);
+  });
+
+  it("a StrokeStore constructed with localId: 'real-participant-id' emits every onOutbound frame with from: 'real-participant-id'", () => {
+    const store = new StrokeStore({ localId: 'real-participant-id' });
+    const frames: any[] = [];
+    store.onOutbound((f) => frames.push(f));
+
+    store.beginLocal('s1', { w: 1, h: 1 });
+    store.appendLocal('s1', 0.5, 0.5);
+    store.endLocal('s1');
+
+    expect(frames.every((f) => f.from === 'real-participant-id')).toBe(true);
+  });
+
+  it('a StrokeStore constructed with no localId option emits onOutbound frames with from: LOCAL_SENDER', () => {
+    const store = new StrokeStore();
+    const frames: any[] = [];
+    store.onOutbound((f) => frames.push(f));
+
+    store.beginLocal('s1', { w: 1, h: 1 });
+    store.appendLocal('s1', 0.5, 0.5);
+
+    expect(frames[0].from).toBe(LOCAL_SENDER);
+  });
+
+  it('registering two independent onOutbound(fn) listeners both fire, in registration order, for the same emission', () => {
+    const store = new StrokeStore();
+    const calls: string[] = [];
+    store.onOutbound(() => calls.push('fn1'));
+    store.onOutbound(() => calls.push('fn2'));
+
+    store.beginLocal('s1', { w: 1, h: 1 });
+    store.appendLocal('s1', 0.5, 0.5);
+
+    expect(calls).toEqual(['fn1', 'fn2']);
   });
 });
