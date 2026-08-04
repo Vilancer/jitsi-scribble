@@ -43,11 +43,17 @@ jobs:
   # completion (they're separate jobs on separate triggers) so a release
   # never skips verification even if this push isn't also a pull_request.
   #
-  # A re-run against an already-published version is EXPECTED to fail
-  # loudly: `nx release publish` surfaces npm's "cannot publish over
-  # previously published version" error rather than silently no-op'ing.
-  # That is the correct, non-silent behavior for a duplicate-tag mistake —
-  # it is not a bug to work around (T-02-04-02).
+  # A re-run against an already-published version does NOT fail loudly —
+  # verified against the real registry on 2026-08-04. `nx release publish`
+  # pre-checks the registry itself and gracefully SKIPS
+  # ("Skipped package ... because vX.Y.Z already exists ...") with a
+  # green job, before ever calling `npm publish`. This supersedes
+  # T-02-04-02's original "fails loudly" assumption, which was never
+  # exercised against a real registry. The graceful skip is Nx's actual,
+  # intended design — it's what makes re-running a release workflow safe —
+  # and combined with the `concurrency` group below it still fully
+  # mitigates the duplicate/race threat T-02-04-02 was written against,
+  # just via a no-op rather than an error.
   release:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -89,6 +95,18 @@ jobs:
       # plan's must-have truth requires. Registry/auth token come from a
       # repo secret (NPM_TOKEN), never hardcoded and never this plan's own
       # local-verdaccio testing script.
+      # NPM_CONFIG_PROVENANCE currently has NO EFFECT — verified against a
+      # real publish on 2026-08-04. `nx release publish` shells out to
+      # `pnpm publish`, and while pnpm's config loader does parse this env
+      # var into a `provenance: true` setting, the pnpm 11.17.0 CLI has no
+      # Sigstore/OIDC signing implementation behind that setting: it's
+      # accepted and silently ignored. Known upstream gap, not a config
+      # mistake here: https://github.com/pnpm/pnpm/issues/6607. The
+      # `id-token: write` permission above is necessary but not sufficient
+      # while publishing goes through pnpm. Revisit if pnpm ships real
+      # support, or switch this one step to `npm publish --provenance`
+      # (npm's CLI has full support today) if provenance becomes a hard
+      # requirement before then.
       - name: Publish (nx release publish)
         run: pnpm nx release publish
         env:
