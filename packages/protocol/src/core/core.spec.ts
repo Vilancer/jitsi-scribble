@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { MSG_END, MSG_MOVE, MSG_START, PROTOCOL_VERSION, QUANT_STEPS } from '../wire-constants.js';
 import {
@@ -7,6 +7,9 @@ import {
   FADE_MS,
   HOLD_MS,
   LOCAL_SENDER,
+  MAX_POINTS_PER_STROKE,
+  MAX_STROKES_PER_SENDER,
+  MAX_TOTAL_STROKES,
   quantize,
   STALE_MS,
   StrokeStore,
@@ -362,5 +365,117 @@ describe('StrokeStore.apply() — remote-ingest decode-and-dispatch skeleton (CO
     store.apply(endPayload('a', 'x'), 'a');
     // Ending sender a's stroke must not affect sender b's identically-id'd stroke.
     expect(store.snapshot().find((s) => s.from === 'b')?.points[0][0]).toBeCloseTo(0.9, 3);
+  });
+});
+
+describe('StrokeStore defensive caps — evict-oldest, shared across local and remote inserts (CORE-04, D-03)', () => {
+  it('exports the exact D-03 cap numbers', () => {
+    expect(MAX_STROKES_PER_SENDER).toBe(4);
+    expect(MAX_TOTAL_STROKES).toBe(16);
+    expect(MAX_POINTS_PER_STROKE).toBe(256);
+  });
+
+  it('inserting a 3rd stroke into a store capped at maxTotalStrokes:2 evicts the globally-oldest by createdAt', () => {
+    const store = new StrokeStore({ maxTotalStrokes: 2 });
+    store.__testInsertRemote('a', 'first');
+    store.tick(10);
+    store.__testInsertRemote('b', 'second');
+    store.tick(20);
+    store.apply(
+      { v: PROTOCOL_VERSION, t: MSG_START, from: 'c', id: 'third', p: [2048, 2048], frame: { w: 1, h: 1 } },
+      'c',
+    );
+
+    const strokes = store.snapshot();
+    expect(strokes).toHaveLength(2);
+    expect(strokes.map((s) => s.id)).toEqual(['second', 'third']);
+  });
+
+  it("a sender with maxStrokesPerSender concurrent strokes open: one more Start evicts THAT sender's own oldest, not another sender's older stroke", () => {
+    const store = new StrokeStore({ maxStrokesPerSender: 2, maxTotalStrokes: 100 });
+    store.__testInsertRemote('other', 'globally-oldest');
+    store.tick(5);
+    store.apply(
+      { v: PROTOCOL_VERSION, t: MSG_START, from: 'a', id: 's1', p: [2048, 2048], frame: { w: 1, h: 1 } },
+      'a',
+    );
+    store.tick(10);
+    store.apply(
+      { v: PROTOCOL_VERSION, t: MSG_START, from: 'a', id: 's2', p: [2048, 2048], frame: { w: 1, h: 1 } },
+      'a',
+    );
+    store.tick(20);
+    store.apply(
+      { v: PROTOCOL_VERSION, t: MSG_START, from: 'a', id: 's3', p: [2048, 2048], frame: { w: 1, h: 1 } },
+      'a',
+    );
+
+    const strokes = store.snapshot();
+    expect(strokes.map((s) => s.id).sort()).toEqual(['globally-oldest', 's2', 's3'].sort());
+    expect(strokes.filter((s) => s.from === 'a')).toHaveLength(2);
+  });
+
+  it('a local stroke (beginLocal) is NOT exempt from the total cap — it is evicted just like a remote insert', () => {
+    const store = new StrokeStore({ maxTotalStrokes: 1 });
+    store.__testInsertRemote('remote', 'r1');
+    store.tick(10);
+    store.beginLocal('local-1', { w: 1, h: 1 });
+
+    const strokes = store.snapshot();
+    expect(strokes).toHaveLength(1);
+    expect(strokes[0].from).toBe(LOCAL_SENDER);
+  });
+
+  it('appending points past maxPointsPerStroke evicts that stroke\'s own OLDEST points first (sliding window)', () => {
+    const store = new StrokeStore({ maxPointsPerStroke: 3 });
+    store.beginLocal('s1', { w: 1, h: 1 });
+    for (let i = 0; i < 5; i++) store.appendLocal('s1', i / 10, i / 10);
+
+    const stroke = store.snapshot()[0];
+    expect(stroke.points).toHaveLength(3);
+    expect(stroke.points).toEqual([
+      [0.2, 0.2],
+      [0.3, 0.3],
+      [0.4, 0.4],
+    ]);
+  });
+
+  it('a remote Move appending points past maxPointsPerStroke evicts the oldest points, never rejects the whole message', () => {
+    const store = new StrokeStore({ maxPointsPerStroke: 2 });
+    store.apply(
+      { v: PROTOCOL_VERSION, t: MSG_START, from: 'p1', id: 's1', p: [2048, 2048], frame: { w: 1, h: 1 } },
+      'p1',
+    );
+    store.apply(
+      {
+        v: PROTOCOL_VERSION,
+        t: MSG_MOVE,
+        from: 'p1',
+        id: 's1',
+        pts: [
+          [quantize(0.1), quantize(0.1)],
+          [quantize(0.2), quantize(0.2)],
+        ],
+      },
+      'p1',
+    );
+
+    const stroke = store.snapshot()[0];
+    expect(stroke.points).toHaveLength(2);
+    expect(stroke.points[0][0]).toBeCloseTo(0.1, 3);
+    expect(stroke.points[1][0]).toBeCloseTo(0.2, 3);
+  });
+
+  it('cap eviction never logs — console.warn is not called during a total-cap eviction', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const store = new StrokeStore({ maxTotalStrokes: 1 });
+    store.__testInsertRemote('a', 'first');
+    store.apply(
+      { v: PROTOCOL_VERSION, t: MSG_START, from: 'b', id: 'second', p: [2048, 2048], frame: { w: 1, h: 1 } },
+      'b',
+    );
+
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 });
