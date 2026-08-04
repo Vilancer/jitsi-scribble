@@ -6,9 +6,6 @@
 // RN-entrypoint rule (PKG-04) true once Wave 2 replaces these placeholders
 // with real content — consumers who need schema import
 // '@jitsi-scribble/protocol/schema' explicitly.
-import * as Effect from 'effect';
-void Effect;
-
 export * from './codec/index.js';
 export * from './geometry/index.js';
 export * from './transport/index.js';
