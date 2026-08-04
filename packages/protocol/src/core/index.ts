@@ -17,7 +17,21 @@ import * as Effect from 'effect/Effect';
 import * as Ref from 'effect/Ref';
 
 import { decode } from '../codec/index.js';
-import { MSG_CLEAR, MSG_END, MSG_MOVE, MSG_PRESENCE, MSG_START, QUANT_MAX, QUANT_MIN, QUANT_STEPS } from '../wire-constants.js';
+// Type-only import — erased at compile time, matching codec/index.ts's own
+// convention. This does NOT pull effect/Schema into core's emitted .js,
+// since it is a type, never a value, import.
+import type { WireFrame } from '../schema/index.js';
+import {
+  MSG_CLEAR,
+  MSG_END,
+  MSG_MOVE,
+  MSG_PRESENCE,
+  MSG_START,
+  PROTOCOL_VERSION,
+  QUANT_MAX,
+  QUANT_MIN,
+  QUANT_STEPS,
+} from '../wire-constants.js';
 
 /** A stroke holds at full opacity for this long (ms) after its effective end
  * time, before it starts fading (CORE-02). Half-open interval: at
@@ -60,6 +74,25 @@ export const RATE_CAPACITY = 90 as const;
 /** RATE_CAPACITY expressed as tokens-refilled-per-millisecond, for the
  * token-bucket refill formula in checkRateLimit. */
 const RATE_PER_MS = RATE_CAPACITY / 1000;
+
+/** PROTO-03's outbound move-coalescing time window (ms): a local stroke's
+ * buffered points flush as one coalesced Move WireFrame once at least this
+ * long has elapsed since the last flush for that stroke. Closed lower bound
+ * — `elapsed >= MOVE_COALESCE_TIME_MS` triggers the flush, not `>`. */
+export const MOVE_COALESCE_TIME_MS = 33 as const;
+
+/** PROTO-03's outbound move-coalescing distance threshold, in the store's
+ * normalized [QUANT_MIN, QUANT_MAX] coordinate domain: a point at least this
+ * far from the last flushed point makes the NEXT tick() flush immediately
+ * even if MOVE_COALESCE_TIME_MS hasn't elapsed yet. Derivation (this plan's
+ * own arithmetic, not independently sourced — no prior doc gives a
+ * normalized-space epsilon for "~4dp" directly, since the store deliberately
+ * never touches pixels/dp): ARCHITECTURE.md section 5 anchors its own
+ * ε≈0.004 normalized threshold to "≈1.5 px on a 390 px-wide tile"
+ * (0.004/1.5 ≈ 0.002667 normalized per reference-pixel). PROTO-03's refined
+ * "~4dp" figure, scaled by that same reference-tile methodology, is
+ * 4 × 0.002667 ≈ 0.0107, rounded to 0.01. */
+export const MOVE_COALESCE_DISTANCE_EPSILON = 0.01 as const;
 
 export interface FrameDims {
   readonly w: number;
@@ -183,6 +216,12 @@ function toPublicStroke(s: StrokeInternal): Stroke {
 export class StrokeStore {
   private readonly state: Ref.Ref<StoreState>;
   private readonly subscribers = new Set<(strokes: readonly Stroke[]) => void>();
+  /** onOutbound subscribers (PROTO-03) — a second, independent Set, notified
+   * ONLY from beginLocal/appendLocal/endLocal/tick's local-flush pass, never
+   * from apply()'s remote-ingest branches (T-03-03-01). Copies the exact
+   * Set.add / return-delete-closure idiom `subscribe` and transport/index.ts
+   * already use. */
+  private readonly outboundSubscribers = new Set<(frame: WireFrame) => void>();
   /** Per-sender token buckets (D-04/CORE-05) — deliberately a plain `Map`
    * OUTSIDE the `Ref`-wrapped StoreState, since it is bookkeeping, not
    * shareable snapshot state, following the same "plain field beside the
@@ -192,12 +231,29 @@ export class StrokeStore {
     string,
     { tokens: number; lastRefillAt: number; warnedSinceRecovery: boolean }
   >();
+  /** Per-local-stroke outbound-coalescing bookkeeping (PROTO-03), keyed by
+   * the PLAIN `id` (not the composite `${from} ${id}` key — this bookkeeping
+   * only ever exists for local strokes, whose sender is always `LOCAL_SENDER`
+   * internally). Deliberately a plain field beside the Ref, same rationale as
+   * `rateLimitBuckets` above. */
+  private readonly localOutbound = new Map<
+    string,
+    {
+      pendingPoints: Array<readonly [number, number]>;
+      lastFlushAt: number;
+      lastFlushPoint: readonly [number, number] | undefined;
+    }
+  >();
   private readonly holdMs: number;
   private readonly fadeMs: number;
   private readonly staleMs: number;
   private readonly maxStrokesPerSender: number;
   private readonly maxTotalStrokes: number;
   private readonly maxPointsPerStroke: number;
+  /** The `from` field stamped onto every outbound WireFrame this store
+   * emits (PROTO-03) — used ONLY for that purpose, never for internal
+   * map-keying, which always uses the LOCAL_SENDER sentinel (Plan 03-01). */
+  private readonly localId: string;
   /** The injected-clock cache every non-tick public method reads instead of
    * Date.now(). Since beginLocal/appendLocal/endLocal take no `now`
    * parameter per the locked D-02 signature list, they timestamp against
@@ -212,6 +268,7 @@ export class StrokeStore {
     maxStrokesPerSender?: number;
     maxTotalStrokes?: number;
     maxPointsPerStroke?: number;
+    localId?: string;
   }) {
     this.holdMs = opts?.holdMs ?? HOLD_MS;
     this.fadeMs = opts?.fadeMs ?? FADE_MS;
@@ -219,6 +276,7 @@ export class StrokeStore {
     this.maxStrokesPerSender = opts?.maxStrokesPerSender ?? MAX_STROKES_PER_SENDER;
     this.maxTotalStrokes = opts?.maxTotalStrokes ?? MAX_TOTAL_STROKES;
     this.maxPointsPerStroke = opts?.maxPointsPerStroke ?? MAX_POINTS_PER_STROKE;
+    this.localId = opts?.localId ?? LOCAL_SENDER;
     // Ref.unsafeMake needs no Effect runtime — safe to call directly here.
     this.state = Ref.unsafeMake<StoreState>({ strokes: new Map() });
   }
@@ -281,7 +339,11 @@ export class StrokeStore {
   }
 
   /** Begins a locally-authored stroke. Subject to the same total-cap
-   * eviction as any remote insert (D-03) — local strokes are NOT exempt. */
+   * eviction as any remote insert (D-03) — local strokes are NOT exempt.
+   * Initializes this stroke's outbound-coalescing bookkeeping (PROTO-03) —
+   * the actual Start WireFrame emission happens on the FIRST appendLocal
+   * call, not here (matching the wire's own Start-carries-the-first-point
+   * shape). */
   beginLocal(id: string, frame: FrameDims): void {
     Effect.runSync(
       Ref.update(this.state, (s) => {
@@ -302,40 +364,128 @@ export class StrokeStore {
         return s;
       }),
     );
+    this.localOutbound.set(id, { pendingPoints: [], lastFlushAt: this.lastTickNow, lastFlushPoint: undefined });
     this.notify();
   }
 
   /** Appends a point to a locally-authored stroke. Defensive: a lookup miss
    * (no matching beginLocal) is a silent no-op, never throws. Points beyond
    * `maxPointsPerStroke` slide the window (D-03), evicting this stroke's own
-   * oldest points, never a different stroke. */
+   * oldest points, never a different stroke.
+   *
+   * Outbound coalescing (PROTO-03): the FIRST point ever appended to this
+   * stroke (points.length === 1 right after the push) emits a Start
+   * WireFrame immediately via emitOutbound — never batched, never waiting
+   * for tick(). Every subsequent point is buffered into this stroke's
+   * localOutbound.pendingPoints instead, to be flushed as a coalesced Move
+   * by tick()'s local-flush pass or by endLocal. */
   appendLocal(id: string, u: number, v: number): void {
+    let startFrame: WireFrame | undefined;
     Effect.runSync(
       Ref.update(this.state, (s) => {
         const entry = s.strokes.get(this.key(LOCAL_SENDER, id));
         if (entry) {
           this.appendPointsCapped(entry, [[u, v]]);
           entry.lastMoveAt = this.lastTickNow;
+          if (entry.points.length === 1) {
+            startFrame = {
+              v: PROTOCOL_VERSION,
+              t: MSG_START,
+              from: this.localId,
+              id,
+              p: [quantize(u), quantize(v)],
+              frame: entry.frame as FrameDims,
+            };
+          } else {
+            this.localOutbound.get(id)?.pendingPoints.push([u, v]);
+          }
         }
         return s;
       }),
     );
+
+    if (startFrame) {
+      const outbound = this.localOutbound.get(id);
+      if (outbound) outbound.lastFlushPoint = [u, v]; // Start point IS the first flush baseline
+      this.emitOutbound(startFrame);
+    }
+
     this.notify();
   }
 
   /** Ends a locally-authored stroke. Idempotent — a second endLocal call on
-   * an already-ended stroke is a no-op, never resets the timer. */
+   * an already-ended stroke is a no-op, never resets the timer, never
+   * re-flushes or re-emits an End WireFrame.
+   *
+   * Outbound coalescing (PROTO-03): BEFORE setting endedAt, flushes any
+   * still-pending, not-yet-coalesced points as a final Move WireFrame (so no
+   * buffered movement is silently lost when the finger lifts mid-coalescing-
+   * window), THEN emits an End WireFrame — in that order — and finally
+   * garbage-collects this stroke's localOutbound bookkeeping entry. */
   endLocal(id: string): void {
+    const key = this.key(LOCAL_SENDER, id);
+    const existing = Effect.runSync(Ref.get(this.state)).strokes.get(key);
+    const shouldEnd = existing !== undefined && existing.endedAt === undefined;
+
+    if (shouldEnd) this.flushPending(id);
+
     Effect.runSync(
       Ref.update(this.state, (s) => {
-        const entry = s.strokes.get(this.key(LOCAL_SENDER, id));
+        const entry = s.strokes.get(key);
         if (entry && entry.endedAt === undefined) {
           entry.endedAt = this.lastTickNow;
         }
         return s;
       }),
     );
+
+    if (shouldEnd) {
+      this.emitOutbound({ v: PROTOCOL_VERSION, t: MSG_END, from: this.localId, id });
+      this.localOutbound.delete(id);
+    }
+
     this.notify();
+  }
+
+  /** Notifies every registered onOutbound(fn) listener, in registration
+   * order (mirrors subscribe()'s existing multi-listener guarantee). Called
+   * EXCLUSIVELY from beginLocal/appendLocal/endLocal/tick's local-flush pass
+   * — apply()'s remote-ingest branches never call this (T-03-03-01): a
+   * remote-originated stroke is never re-broadcast back onto the wire by
+   * this store. */
+  private emitOutbound(frame: WireFrame): void {
+    for (const fn of this.outboundSubscribers) fn(frame);
+  }
+
+  /**
+   * PROTO-03's outbound move-coalescing flush: reads this stroke's
+   * localOutbound entry; if absent or it has zero pending points, this is a
+   * no-op (this is what makes "a tick() call with zero pending points fires
+   * zero onOutbound events" hold — no empty Move frame is ever constructed).
+   * Otherwise builds one Move WireFrame carrying every pending point in
+   * append order (quantized), emits it via emitOutbound, then resets the
+   * pending-points buffer and records the flush baseline (time + last point)
+   * for the next coalescing window. Called from endLocal (a final flush
+   * before the End frame) and from tick()'s local-flush pass — never from
+   * apply()'s remote-ingest branches.
+   */
+  private flushPending(id: string): void {
+    const outbound = this.localOutbound.get(id);
+    if (!outbound || outbound.pendingPoints.length === 0) return;
+
+    const frame: WireFrame = {
+      v: PROTOCOL_VERSION,
+      t: MSG_MOVE,
+      from: this.localId,
+      id,
+      pts: outbound.pendingPoints.map(([u, v]): [number, number] => [quantize(u), quantize(v)]),
+    };
+    this.emitOutbound(frame);
+
+    const lastFlushPoint = outbound.pendingPoints[outbound.pendingPoints.length - 1];
+    outbound.pendingPoints = [];
+    outbound.lastFlushAt = this.lastTickNow;
+    outbound.lastFlushPoint = lastFlushPoint;
   }
 
   /**
@@ -393,6 +543,10 @@ export class StrokeStore {
    *   it exactly like `endLocal`; if NOT found, do nothing (an orphan `end`
    *   is silently ignored — unlike `move`, no stroke is synthesized).
    * `MSG_CLEAR`/`MSG_PRESENCE`: handled in Task 3.
+   *
+   * Note (T-03-03-01): this method NEVER calls emitOutbound or flushPending
+   * — a remote-originated stroke is never re-broadcast back onto the wire
+   * by this store, regardless of how many tick() calls follow.
    */
   apply(payload: unknown, from: string): void {
     if (!this.checkRateLimit(from)) return;
@@ -501,6 +655,11 @@ export class StrokeStore {
    * tick before eviction: a stroke that just became dead THIS tick is not
    * deleted until the NEXT tick's first pass. THEN recomputes {phase, alpha}
    * for every remaining entry.
+   *
+   * AFTER those two passes, runs a THIRD pass: PROTO-03's outbound
+   * local-move-coalescing flush. A stroke that dies this tick still gets one
+   * final coalesce-flush opportunity before eviction next tick, since this
+   * pass runs in the same tick() call as the dead-eviction pass above.
    */
   tick(now: number): void {
     this.lastTickNow = now;
@@ -524,6 +683,26 @@ export class StrokeStore {
         return s;
       }),
     );
+
+    const currentStrokes = Effect.runSync(Ref.get(this.state)).strokes;
+    // Garbage-collect localOutbound entries for strokes evicted by a cap or
+    // by clear() — cheap at this map's bounded size.
+    for (const id of [...this.localOutbound.keys()]) {
+      if (!currentStrokes.has(this.key(LOCAL_SENDER, id))) {
+        this.localOutbound.delete(id);
+      }
+    }
+    for (const [id, outbound] of this.localOutbound) {
+      if (outbound.pendingPoints.length === 0) continue;
+      const lastPendingPoint = outbound.pendingPoints[outbound.pendingPoints.length - 1];
+      const basePoint = outbound.lastFlushPoint ?? lastPendingPoint;
+      const elapsed = now - outbound.lastFlushAt;
+      const distance = Math.hypot(lastPendingPoint[0] - basePoint[0], lastPendingPoint[1] - basePoint[1]);
+      if (elapsed >= MOVE_COALESCE_TIME_MS || distance >= MOVE_COALESCE_DISTANCE_EPSILON) {
+        this.flushPending(id);
+      }
+    }
+
     this.notify();
   }
 
@@ -605,6 +784,21 @@ export class StrokeStore {
   subscribe(fn: (strokes: readonly Stroke[]) => void): () => void {
     this.subscribers.add(fn);
     return () => this.subscribers.delete(fn);
+  }
+
+  /**
+   * Registers a listener invoked with every coalesced, budget-respecting
+   * outbound WireFrame this store emits for a LOCAL stroke — never for a
+   * remote-originated one (T-03-03-01). Returns an unsubscribe function,
+   * copying the exact Set.add / return-delete-closure idiom `subscribe`
+   * above already uses. The future Phase 4/5 host glue is
+   * `store.onOutbound(frame => transport.send(frame))` — entirely outside
+   * this phase's scope; this store never imports or calls a transport
+   * itself (PROTO-03's "at the store's outbound edge" boundary).
+   */
+  onOutbound(fn: (frame: WireFrame) => void): () => void {
+    this.outboundSubscribers.add(fn);
+    return () => this.outboundSubscribers.delete(fn);
   }
 
   private notify(): void {
