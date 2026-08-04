@@ -1,7 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import * as codec from '../codec/index.js';
-import { MSG_CLEAR, MSG_END, MSG_MOVE, MSG_PRESENCE, MSG_START, PROTOCOL_VERSION, QUANT_STEPS } from '../wire-constants.js';
+import { createMemoryTransportPair } from '../transport/index.js';
+import {
+  MAX_IDENTIFIER_LENGTH,
+  MSG_CLEAR,
+  MSG_END,
+  MSG_MOVE,
+  MSG_PRESENCE,
+  MSG_START,
+  PROTOCOL_VERSION,
+  QUANT_STEPS,
+} from '../wire-constants.js';
 import {
   computePhaseAndAlpha,
   dequantize,
@@ -13,6 +23,7 @@ import {
   MAX_TOTAL_STROKES,
   MOVE_COALESCE_DISTANCE_EPSILON,
   MOVE_COALESCE_TIME_MS,
+  MOVE_WIRE_BYTE_BUDGET,
   quantize,
   RATE_CAPACITY,
   STALE_MS,
@@ -757,5 +768,87 @@ describe('StrokeStore.onOutbound — immediate start/end + move coalescing (PROT
     store.appendLocal('s1', 0.5, 0.5);
 
     expect(calls).toEqual(['fn1', 'fn2']);
+  });
+});
+
+describe('MOVE_WIRE_BYTE_BUDGET — proven against the coalescer\'s real typical output (RESEARCH.md Pitfall 2)', () => {
+  it('exports MOVE_WIRE_BYTE_BUDGET = 600', () => {
+    expect(MOVE_WIRE_BYTE_BUDGET).toBe(600);
+  });
+
+  it('a coalesced Move WireFrame carrying 3 points, with from/id at MAX_IDENTIFIER_LENGTH, encodes to <= MOVE_WIRE_BYTE_BUDGET', () => {
+    const longFrom = 'p'.repeat(MAX_IDENTIFIER_LENGTH);
+    const longId = 's'.repeat(MAX_IDENTIFIER_LENGTH);
+    const store = new StrokeStore({ localId: longFrom });
+    const frames: any[] = [];
+    store.onOutbound((f) => frames.push(f));
+
+    store.tick(0);
+    store.beginLocal(longId, { w: 1, h: 1 });
+    store.appendLocal(longId, 0.5, 0.5); // Start, immediate
+    store.appendLocal(longId, 0.51, 0.5); // buffered
+    store.appendLocal(longId, 0.52, 0.5); // buffered
+    store.appendLocal(longId, 0.53, 0.5); // buffered
+
+    store.tick(MOVE_COALESCE_TIME_MS); // flush the 3 buffered points as one coalesced Move
+
+    const moveFrame = frames.find((f) => f.t === MSG_MOVE);
+    expect(moveFrame).toBeDefined();
+    expect(moveFrame.pts).toHaveLength(3);
+    expect(codec.encode(moveFrame).length).toBeLessThanOrEqual(MOVE_WIRE_BYTE_BUDGET);
+  });
+
+  it('a Start WireFrame and an End WireFrame, each with from/id at MAX_IDENTIFIER_LENGTH, encode well under 600 bytes', () => {
+    const longFrom = 'p'.repeat(MAX_IDENTIFIER_LENGTH);
+    const longId = 's'.repeat(MAX_IDENTIFIER_LENGTH);
+    const store = new StrokeStore({ localId: longFrom });
+    const frames: any[] = [];
+    store.onOutbound((f) => frames.push(f));
+
+    store.beginLocal(longId, { w: 1920, h: 1080 });
+    store.appendLocal(longId, 0.5, 0.5); // Start
+    store.endLocal(longId); // End (no pending points buffered)
+
+    const startFrame = frames.find((f) => f.t === MSG_START);
+    const endFrame = frames.find((f) => f.t === MSG_END);
+    expect(startFrame).toBeDefined();
+    expect(endFrame).toBeDefined();
+    // A much smaller assertion budget than MOVE_WIRE_BYTE_BUDGET is fine here
+    // — the point is proving Start/End are nowhere near the Move-specific
+    // 600-byte ceiling, not pinning an exact byte count for a single-point
+    // frame at max-length identifiers.
+    expect(codec.encode(startFrame).length).toBeLessThanOrEqual(400);
+    expect(codec.encode(endFrame).length).toBeLessThanOrEqual(400);
+  });
+});
+
+describe('StrokeStore two-store round trip through MemoryTransport — the phase close-out proof', () => {
+  it("storeA's full local stroke lifecycle (begin, two appends, a coalesce-window tick, end) round-trips into storeB.snapshot() within 1/QUANT_STEPS tolerance", () => {
+    const [transportA, transportB] = createMemoryTransportPair('a', 'b');
+    const storeA = new StrokeStore({ localId: 'a' });
+    const storeB = new StrokeStore({ localId: 'b' });
+
+    storeA.onOutbound((f) => transportA.send(f));
+    transportB.subscribe((from, payload) => storeB.apply(payload, from));
+
+    storeA.tick(0);
+    storeA.beginLocal('s1', { w: 1920, h: 1080 });
+    storeA.appendLocal('s1', 0.2, 0.3); // Start -> immediately sent to storeB
+    storeA.appendLocal('s1', 0.25, 0.35); // buffered
+
+    storeA.tick(MOVE_COALESCE_TIME_MS); // flushes the buffered point as a coalesced Move -> sent to storeB
+
+    storeA.endLocal('s1'); // no pending points left; just the End frame -> sent to storeB
+
+    const strokes = storeB.snapshot();
+    expect(strokes).toHaveLength(1);
+    const stroke = strokes[0];
+    expect(stroke.from).toBe('a');
+    expect(stroke.frame).toEqual({ w: 1920, h: 1080 });
+    expect(stroke.points).toHaveLength(2);
+    expect(Math.abs(stroke.points[0][0] - 0.2)).toBeLessThanOrEqual(1 / QUANT_STEPS);
+    expect(Math.abs(stroke.points[0][1] - 0.3)).toBeLessThanOrEqual(1 / QUANT_STEPS);
+    expect(Math.abs(stroke.points[1][0] - 0.25)).toBeLessThanOrEqual(1 / QUANT_STEPS);
+    expect(Math.abs(stroke.points[1][1] - 0.35)).toBeLessThanOrEqual(1 / QUANT_STEPS);
   });
 });
