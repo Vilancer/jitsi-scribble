@@ -41,6 +41,15 @@ export const STALE_MS = 1500 as const;
  * map-keying and clear('mine') scoping; never sent on the wire. */
 export const LOCAL_SENDER = '__local__' as const;
 
+/** D-03's conservative defensive-cap numbers, biasing toward protecting
+ * low-end Android memory. A hostile/broken sender cannot grow the store
+ * past these bounds (CORE-04, T-03-02-01) — enforced by
+ * `enforceCapsBeforeInsert`/`appendPointsCapped`, never by rejecting an
+ * insert/append wholesale. */
+export const MAX_STROKES_PER_SENDER = 4 as const;
+export const MAX_TOTAL_STROKES = 16 as const;
+export const MAX_POINTS_PER_STROKE = 256 as const;
+
 export interface FrameDims {
   readonly w: number;
   readonly h: number;
@@ -154,6 +163,9 @@ export class StrokeStore {
   private readonly holdMs: number;
   private readonly fadeMs: number;
   private readonly staleMs: number;
+  private readonly maxStrokesPerSender: number;
+  private readonly maxTotalStrokes: number;
+  private readonly maxPointsPerStroke: number;
   /** The injected-clock cache every non-tick public method reads instead of
    * Date.now(). Since beginLocal/appendLocal/endLocal take no `now`
    * parameter per the locked D-02 signature list, they timestamp against
@@ -161,10 +173,20 @@ export class StrokeStore {
    * sequence of tick() calls, needing no fake timers to test. */
   private lastTickNow = 0;
 
-  constructor(opts?: { holdMs?: number; fadeMs?: number; staleMs?: number }) {
+  constructor(opts?: {
+    holdMs?: number;
+    fadeMs?: number;
+    staleMs?: number;
+    maxStrokesPerSender?: number;
+    maxTotalStrokes?: number;
+    maxPointsPerStroke?: number;
+  }) {
     this.holdMs = opts?.holdMs ?? HOLD_MS;
     this.fadeMs = opts?.fadeMs ?? FADE_MS;
     this.staleMs = opts?.staleMs ?? STALE_MS;
+    this.maxStrokesPerSender = opts?.maxStrokesPerSender ?? MAX_STROKES_PER_SENDER;
+    this.maxTotalStrokes = opts?.maxTotalStrokes ?? MAX_TOTAL_STROKES;
+    this.maxPointsPerStroke = opts?.maxPointsPerStroke ?? MAX_POINTS_PER_STROKE;
     // Ref.unsafeMake needs no Effect runtime — safe to call directly here.
     this.state = Ref.unsafeMake<StoreState>({ strokes: new Map() });
   }
@@ -173,11 +195,65 @@ export class StrokeStore {
     return `${from} ${id}`;
   }
 
-  /** Begins a locally-authored stroke. This task does NOT yet apply any cap
-   * (Plan 03-02 adds that). */
+  /**
+   * D-03's total + per-sender cap enforcement, called from inside the SAME
+   * Ref.update transaction as the insert it precedes (never a separate
+   * Effect.runSync call), so check-then-evict-then-insert is atomic against
+   * this single-threaded store. Independent checks — a single insert can
+   * trigger both a global eviction and a per-sender eviction if both
+   * thresholds are already at their limit (RESEARCH.md Code Examples).
+   * Called from THREE sites: beginLocal, apply()'s MSG_START branch, and
+   * apply()'s MSG_MOVE orphan-insert branch. Local strokes are NOT exempt
+   * from the total cap (CONTEXT.md's Claude's-Discretion item, resolved:
+   * counted, since it's a shared memory budget).
+   *
+   * No log line here — cap eviction is a routine, expected, unlogged state
+   * transition (only rate-limit drops log, per D-04/Task 3).
+   */
+  private enforceCapsBeforeInsert(strokes: Map<string, StrokeInternal>, from: string): void {
+    if (strokes.size >= this.maxTotalStrokes) {
+      let oldestKey: string | undefined;
+      let oldestCreatedAt = Infinity;
+      for (const [key, entry] of strokes) {
+        if (entry.createdAt < oldestCreatedAt) {
+          oldestCreatedAt = entry.createdAt;
+          oldestKey = key;
+        }
+      }
+      if (oldestKey !== undefined) strokes.delete(oldestKey);
+    }
+
+    const bySender = [...strokes.entries()].filter(([, v]) => v.from === from);
+    if (bySender.length >= this.maxStrokesPerSender) {
+      const oldest = bySender.reduce((a, b) => (a[1].createdAt <= b[1].createdAt ? a : b));
+      strokes.delete(oldest[0]);
+    }
+  }
+
+  /**
+   * D-03's points-per-stroke cap (CORE-04): pushes every new point onto
+   * `stroke.points`, then, if the resulting length exceeds
+   * `maxPointsPerStroke`, slices the array down to keep only the most
+   * recent `maxPointsPerStroke` entries (drop from the front — sliding
+   * window, never rejects the whole append). Independent of, and much
+   * smaller in scope than, MAX_POINTS_PER_MESSAGE (`codec`'s single-message
+   * cap) — this caps a stroke's whole-lifetime total.
+   */
+  private appendPointsCapped(
+    stroke: StrokeInternal,
+    newPoints: readonly (readonly [number, number])[],
+  ): void {
+    const combined = [...stroke.points, ...newPoints];
+    stroke.points =
+      combined.length > this.maxPointsPerStroke ? combined.slice(combined.length - this.maxPointsPerStroke) : combined;
+  }
+
+  /** Begins a locally-authored stroke. Subject to the same total-cap
+   * eviction as any remote insert (D-03) — local strokes are NOT exempt. */
   beginLocal(id: string, frame: FrameDims): void {
     Effect.runSync(
       Ref.update(this.state, (s) => {
+        this.enforceCapsBeforeInsert(s.strokes, LOCAL_SENDER);
         const internal: StrokeInternal = {
           id,
           from: LOCAL_SENDER,
@@ -198,13 +274,15 @@ export class StrokeStore {
   }
 
   /** Appends a point to a locally-authored stroke. Defensive: a lookup miss
-   * (no matching beginLocal) is a silent no-op, never throws. */
+   * (no matching beginLocal) is a silent no-op, never throws. Points beyond
+   * `maxPointsPerStroke` slide the window (D-03), evicting this stroke's own
+   * oldest points, never a different stroke. */
   appendLocal(id: string, u: number, v: number): void {
     Effect.runSync(
       Ref.update(this.state, (s) => {
         const entry = s.strokes.get(this.key(LOCAL_SENDER, id));
         if (entry) {
-          entry.points = [...entry.points, [u, v]];
+          this.appendPointsCapped(entry, [[u, v]]);
           entry.lastMoveAt = this.lastTickNow;
         }
         return s;
@@ -257,6 +335,7 @@ export class StrokeStore {
       case MSG_START: {
         Effect.runSync(
           Ref.update(this.state, (s) => {
+            this.enforceCapsBeforeInsert(s.strokes, from);
             const internal: StrokeInternal = {
               id: frame.id,
               from,
@@ -286,17 +365,19 @@ export class StrokeStore {
               ([u, v]): readonly [number, number] => [dequantize(u), dequantize(v)],
             );
             if (entry) {
-              entry.points = [...entry.points, ...dequantizedPoints];
+              this.appendPointsCapped(entry, dequantizedPoints);
               entry.lastMoveAt = this.lastTickNow;
             } else {
               // CORE-06: an orphan move (no preceding start) synthesizes a
               // new stroke rather than being discarded. No frame dims are
               // available from the wire for this case (MoveFrameSchema
-              // carries no `frame` field) — frame stays undefined.
-              s.strokes.set(key, {
+              // carries no `frame` field) — frame stays undefined. Subject
+              // to the same total/per-sender caps as any other insert.
+              this.enforceCapsBeforeInsert(s.strokes, from);
+              const inserted: StrokeInternal = {
                 id: frame.id,
                 from,
-                points: dequantizedPoints,
+                points: [],
                 frame: undefined,
                 phase: 'live',
                 fadeStartedAt: undefined,
@@ -304,7 +385,9 @@ export class StrokeStore {
                 endedAt: undefined,
                 createdAt: this.lastTickNow,
                 lastMoveAt: this.lastTickNow,
-              });
+              };
+              this.appendPointsCapped(inserted, dequantizedPoints);
+              s.strokes.set(key, inserted);
             }
             return s;
           }),
