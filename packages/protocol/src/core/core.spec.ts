@@ -107,6 +107,91 @@ describe('StrokeStore state machine (CORE-01, CORE-02)', () => {
   });
 });
 
+describe('StrokeStore.clear(scope) — D-05 instant-vanish (CORE-03, GEO-05)', () => {
+  it("clear('all') removes a live, a mid-hold, and a mid-fade stroke in one call; snapshot() is [] with no further tick()", () => {
+    const store = new StrokeStore();
+    store.beginLocal('live', { w: 1, h: 1 }); // never ended -> stays live
+    store.beginLocal('holding', { w: 1, h: 1 });
+    store.beginLocal('fading', { w: 1, h: 1 });
+    store.tick(1000);
+    store.endLocal('holding'); // effective end at 1000
+    store.endLocal('fading'); // effective end at 1000
+    store.tick(1000 + HOLD_MS + 100); // holding: elapsed=100 -> live/held; fading needs a later end
+
+    // Re-derive 'fading' precisely: end it later than 'holding' so, at one
+    // shared tick, 'holding' is mid-hold and 'fading' is mid-fade.
+    const store2 = new StrokeStore();
+    store2.beginLocal('live', { w: 1, h: 1 });
+    store2.beginLocal('holding', { w: 1, h: 1 });
+    store2.beginLocal('fading', { w: 1, h: 1 });
+    store2.tick(0);
+    store2.endLocal('fading'); // ends at 0
+    store2.tick(2000); // fading: elapsed 2000 = HOLD_MS -> mid-fade boundary (alpha 1, phase fading)
+    store2.endLocal('holding'); // ends at 2000
+    store2.tick(2100); // holding: elapsed 100 -> live/held; fading: elapsed 2100 -> mid-fade, alpha<1
+    expect(store2.snapshot().map((s) => s.phase).sort()).toEqual(['fading', 'live', 'live']);
+
+    store2.clear('all');
+    expect(store2.snapshot()).toEqual([]);
+    // (store from the first block is unused for assertion beyond exercising the API without throwing)
+    expect(() => store.clear('all')).not.toThrow();
+  });
+
+  it("clear('all') on an empty store does not throw and leaves snapshot() === []", () => {
+    const store = new StrokeStore();
+    expect(() => store.clear('all')).not.toThrow();
+    expect(store.snapshot()).toEqual([]);
+  });
+
+  it("clear('mine') removes only local strokes, leaving a remote stroke and its relative position untouched", () => {
+    const store = new StrokeStore();
+    store.beginLocal('a', { w: 1, h: 1 });
+    store.beginLocal('b', { w: 1, h: 1 });
+    // Insert a remote stroke directly (apply() does not exist until Plan 03-02).
+    store.__testInsertRemote('remote-1', 'r1');
+
+    store.clear('mine');
+    expect(store.snapshot().map((x) => x.id)).toEqual(['r1']);
+  });
+
+  it("clear(LOCAL_SENDER) produces identical resulting state to clear('mine') on the same store contents", () => {
+    const makeStore = () => {
+      const store = new StrokeStore();
+      store.beginLocal('a', { w: 1, h: 1 });
+      store.beginLocal('b', { w: 1, h: 1 });
+      return store;
+    };
+
+    const storeA = makeStore();
+    storeA.clear('mine');
+
+    const storeB = makeStore();
+    storeB.clear(LOCAL_SENDER);
+
+    expect(storeA.snapshot()).toEqual(storeB.snapshot());
+  });
+
+  it('clear(scope) targeting a specific sender removes only that sender, preserving order of the rest', () => {
+    const store = new StrokeStore();
+    store.__testInsertRemote('sender-a', 'a');
+    store.__testInsertRemote('sender-b', 'b');
+    store.__testInsertRemote('sender-c', 'c');
+
+    store.clear('sender-b');
+    expect(store.snapshot().map((x) => x.id)).toEqual(['a', 'c']);
+  });
+
+  it("clear('all') instantly removes a live local stroke (GEO-05's video-dimension-change trigger) with no fade played", () => {
+    const store = new StrokeStore();
+    store.beginLocal('s1', { w: 1, h: 1 });
+    store.tick(0);
+    expect(store.snapshot()[0].phase).toBe('live');
+
+    store.clear('all');
+    expect(store.snapshot()).toEqual([]);
+  });
+});
+
 describe('computePhaseAndAlpha (pure function, CORE-01/CORE-02)', () => {
   it('no effective end yet -> live, alpha 1', () => {
     expect(computePhaseAndAlpha(500, { endedAt: undefined, lastMoveAt: 0 })).toEqual({

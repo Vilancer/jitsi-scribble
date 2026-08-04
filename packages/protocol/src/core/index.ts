@@ -268,6 +268,32 @@ export class StrokeStore {
     this.notify();
   }
 
+  /** Not part of the D-02 public API surface — a test-only hook for
+   * inserting a stroke as if it had arrived from a remote sender, since
+   * apply() (Plan 03-02's remote-ingest pipeline) does not exist yet. Real
+   * remote strokes arrive through apply() once it is built; this method
+   * exists solely so this plan's clear('mine')/clear(scope) tests can set up
+   * a mixed local+remote store without waiting on that pipeline. */
+  __testInsertRemote(from: string, id: string, points: readonly (readonly [number, number])[] = []): void {
+    Effect.runSync(
+      Ref.update(this.state, (s) => {
+        s.strokes.set(this.key(from, id), {
+          id,
+          from,
+          points,
+          frame: undefined,
+          phase: 'live',
+          fadeStartedAt: undefined,
+          alpha: 1,
+          endedAt: undefined,
+          createdAt: this.lastTickNow,
+          lastMoveAt: this.lastTickNow,
+        });
+        return s;
+      }),
+    );
+  }
+
   /** Pure read-only projection of whatever the last tick(now) call cached —
    * no method other than tick() may mutate phase/alpha, and snapshot()
    * itself computes nothing time-dependent (no Date.now(), no re-deriving
