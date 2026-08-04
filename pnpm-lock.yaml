@@ -71,7 +71,7 @@ importers:
 
   apps/example:
     dependencies:
-      '@jitsi-scribble/protocol':
+      '@vilancer/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
 

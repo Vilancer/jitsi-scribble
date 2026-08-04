@@ -3,7 +3,7 @@
 //
 // Starts an isolated local verdaccio instance bound to http://localhost:4873
 // ONLY (never the public npm registry — see this plan's threat model,
-// T-02-04-01), builds and publishes @jitsi-scribble/protocol to it, installs
+// T-02-04-01), builds and publishes @vilancer/protocol to it, installs
 // the published tarball into a scratch location, then for every one of the
 // 5 export subpaths (., ./codec, ./schema, ./geometry, ./transport) runs a
 // real dynamic import() under BOTH the default Node conditions and
@@ -35,11 +35,11 @@ const CHECKER_PATH = resolve(SCRATCH_INSTALL_DIR, 'checker.mjs');
 // One representative REAL (non-placeholder) export per subpath — proves the
 // resolved module carries actual Wave-2 content, not __PLACEHOLDER__.
 const SUBPATH_CHECKS = [
-  { specifier: '@jitsi-scribble/protocol', expectedKey: 'encode' },
-  { specifier: '@jitsi-scribble/protocol/codec', expectedKey: 'encode' },
-  { specifier: '@jitsi-scribble/protocol/schema', expectedKey: 'WireFrameSchema' },
-  { specifier: '@jitsi-scribble/protocol/geometry', expectedKey: 'contentRect' },
-  { specifier: '@jitsi-scribble/protocol/transport', expectedKey: 'MemoryTransport' },
+  { specifier: '@vilancer/protocol', expectedKey: 'encode' },
+  { specifier: '@vilancer/protocol/codec', expectedKey: 'encode' },
+  { specifier: '@vilancer/protocol/schema', expectedKey: 'WireFrameSchema' },
+  { specifier: '@vilancer/protocol/geometry', expectedKey: 'contentRect' },
+  { specifier: '@vilancer/protocol/transport', expectedKey: 'MemoryTransport' },
 ];
 
 const CONDITIONS = [
@@ -138,7 +138,7 @@ async function main() {
   mkdirSync(SCRATCH_INSTALL_DIR, { recursive: true });
 
   try {
-    log('==> building @jitsi-scribble/protocol (nx build protocol)');
+    log('==> building @vilancer/protocol (nx build protocol)');
     run('pnpm', ['nx', 'build', 'protocol'], { cwd: REPO_ROOT });
 
     log('==> writing isolated verdaccio config (storage: ' + STORAGE_DIR + ')');
@@ -156,7 +156,7 @@ async function main() {
         `  npmjs:`,
         `    url: https://registry.npmjs.org/`,
         `packages:`,
-        `  '@jitsi-scribble/protocol':`,
+        `  '@vilancer/protocol':`,
         `    access: $all`,
         `    publish: $all`,
         `    unpublish: $all`,
@@ -196,7 +196,7 @@ async function main() {
 
     await waitForRegistry(REGISTRY);
 
-    log('==> publishing @jitsi-scribble/protocol to the local registry ONLY');
+    log('==> publishing @vilancer/protocol to the local registry ONLY');
     run('npm', ['publish', '--registry', REGISTRY, '--userconfig', NPMRC_PATH], { cwd: PROTOCOL_DIR });
 
     log('==> installing the published tarball into a scratch location');
@@ -206,7 +206,7 @@ async function main() {
     );
     run(
       'npm',
-      ['install', '@jitsi-scribble/protocol', '--registry', REGISTRY, '--userconfig', NPMRC_PATH, '--no-save'],
+      ['install', '@vilancer/protocol', '--registry', REGISTRY, '--userconfig', NPMRC_PATH, '--no-save'],
       { cwd: SCRATCH_INSTALL_DIR },
     );
     writeFileSync(CHECKER_PATH, CHECKER_SOURCE);

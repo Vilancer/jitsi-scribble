@@ -1,13 +1,13 @@
-// The final, concrete proof that the whole @jitsi-scribble/protocol subpath
+// The final, concrete proof that the whole @vilancer/protocol subpath
 // surface — not just the root — is importable under plain node with zero
 // platform dependency (PKG-02), now that every subpath carries real Wave-2
 // content (Plans 02-02/02-03) instead of Plan 02-01's placeholder-only
 // wiring. Exercises one real call against codec, geometry, and transport.
 
-import { encode, decode } from '@jitsi-scribble/protocol/codec';
-import { contentRect, mapTouchToContent } from '@jitsi-scribble/protocol/geometry';
-import { MemoryTransport, createMemoryTransportPair } from '@jitsi-scribble/protocol/transport';
-import type { StartFrame } from '@jitsi-scribble/protocol/schema';
+import { encode, decode } from '@vilancer/protocol/codec';
+import { contentRect, mapTouchToContent } from '@vilancer/protocol/geometry';
+import { MemoryTransport, createMemoryTransportPair } from '@vilancer/protocol/transport';
+import type { StartFrame } from '@vilancer/protocol/schema';
 
 function fail(message: string): never {
   throw new Error(message);

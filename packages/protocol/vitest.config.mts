@@ -4,7 +4,7 @@ export default defineConfig(() => ({
   root: __dirname,
   cacheDir: '../../node_modules/.vite/packages/protocol',
   test: {
-    name: '@jitsi-scribble/protocol',
+    name: '@vilancer/protocol',
     watch: false,
     globals: true,
     environment: 'node',
