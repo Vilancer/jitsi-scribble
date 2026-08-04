@@ -22,6 +22,7 @@ import { decode } from '../codec/index.js';
 // since it is a type, never a value, import.
 import type { WireFrame } from '../schema/index.js';
 import {
+  MAX_IDENTIFIER_LENGTH,
   MSG_CLEAR,
   MSG_END,
   MSG_MOVE,
@@ -74,6 +75,15 @@ export const RATE_CAPACITY = 90 as const;
 /** RATE_CAPACITY expressed as tokens-refilled-per-millisecond, for the
  * token-bucket refill formula in checkRateLimit. */
 const RATE_PER_MS = RATE_CAPACITY / 1000;
+
+/** WR-02's defensive cap on the number of distinct `from` keys tracked in
+ * `rateLimitBuckets` — mirrors D-03's "hostile/broken sender cannot grow the
+ * store past these bounds" goal, but for the rate-limiter's own bookkeeping
+ * Map, which otherwise has no cap at all (unlike the stroke-count state).
+ * Generous enough to comfortably exceed any realistic Jitsi conference's
+ * participant count, narrow enough that a sender/relay spraying many
+ * distinct (or very long) `from` values cannot grow this Map unbounded. */
+export const MAX_TRACKED_RATE_LIMIT_SENDERS = 64 as const;
 
 /** PROTO-03's outbound move-coalescing time window (ms): a local stroke's
  * buffered points flush as one coalesced Move WireFrame once at least this
@@ -515,6 +525,28 @@ export class StrokeStore {
   private checkRateLimit(from: string): boolean {
     let bucket = this.rateLimitBuckets.get(from);
     if (!bucket) {
+      // WR-02: this check runs BEFORE decode()'s own identifier-length
+      // validation, so a garbage/oversized `from` must never get a bucket
+      // created for it in the first place.
+      if (from.length > MAX_IDENTIFIER_LENGTH) return false;
+
+      // WR-02: bound the total number of distinct buckets tracked — evict
+      // the least-recently-refilled bucket (mirrors
+      // enforceCapsBeforeInsert's oldest-by-createdAt eviction pattern) so a
+      // sender/relay using many distinct `from` values cannot grow this Map
+      // without bound.
+      if (this.rateLimitBuckets.size >= MAX_TRACKED_RATE_LIMIT_SENDERS) {
+        let oldestFrom: string | undefined;
+        let oldestRefillAt = Infinity;
+        for (const [key, b] of this.rateLimitBuckets) {
+          if (b.lastRefillAt < oldestRefillAt) {
+            oldestRefillAt = b.lastRefillAt;
+            oldestFrom = key;
+          }
+        }
+        if (oldestFrom !== undefined) this.rateLimitBuckets.delete(oldestFrom);
+      }
+
       bucket = { tokens: RATE_CAPACITY, lastRefillAt: this.lastTickNow, warnedSinceRecovery: false };
       this.rateLimitBuckets.set(from, bucket);
     }
