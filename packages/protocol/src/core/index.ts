@@ -221,8 +221,14 @@ function toPublicStroke(s: StrokeInternal): Stroke {
   return {
     id: s.id,
     from: s.from,
-    points: s.points,
-    frame: s.frame,
+    // WR-03: defensive copies, not the live internal references. `readonly`
+    // on Stroke.points/.frame is compile-time-only — nothing at runtime
+    // stops a consumer from mutating an array/object returned by
+    // snapshot(), and appendPointsCapped later spreads off this exact same
+    // `points` reference, so an external mutation of a previously-returned
+    // snapshot would corrupt the live store's future state.
+    points: [...s.points],
+    frame: s.frame ? { ...s.frame } : undefined,
     phase: s.phase,
     fadeStartedAt: s.fadeStartedAt,
     alpha: s.alpha,
