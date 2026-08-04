@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { MSG_END, MSG_MOVE, MSG_START, PROTOCOL_VERSION, QUANT_STEPS } from '../wire-constants.js';
+import * as codec from '../codec/index.js';
+import { MSG_CLEAR, MSG_END, MSG_MOVE, MSG_PRESENCE, MSG_START, PROTOCOL_VERSION, QUANT_STEPS } from '../wire-constants.js';
 import {
   computePhaseAndAlpha,
   dequantize,
@@ -11,6 +12,7 @@ import {
   MAX_STROKES_PER_SENDER,
   MAX_TOTAL_STROKES,
   quantize,
+  RATE_CAPACITY,
   STALE_MS,
   StrokeStore,
 } from './index.js';
@@ -475,6 +477,105 @@ describe('StrokeStore defensive caps — evict-oldest, shared across local and r
       'b',
     );
 
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+});
+
+describe('StrokeStore per-sender receive rate limiting (CORE-05, D-04) + Clear/Presence routing', () => {
+  const startFrame = (from: string, id: string) => ({
+    v: PROTOCOL_VERSION,
+    t: MSG_START,
+    from,
+    id,
+    p: [2048, 2048] as [number, number],
+    frame: { w: 1, h: 1 },
+  });
+
+  it('exports RATE_CAPACITY = 90', () => {
+    expect(RATE_CAPACITY).toBe(90);
+  });
+
+  it("a sender's first-ever apply() call is never rate-limited", () => {
+    const store = new StrokeStore();
+    store.apply(startFrame('fresh-sender', 's1'), 'fresh-sender');
+    expect(store.snapshot()).toHaveLength(1);
+  });
+
+  it('flooding 200 calls in one window from the same sender: only the first 90 are admitted, and a warning logs exactly once', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const store = new StrokeStore({ maxTotalStrokes: 1000, maxStrokesPerSender: 1000 });
+    store.tick(0);
+    for (let i = 0; i < 200; i++) {
+      store.apply(startFrame('flooder', `s${i}`), 'flooder');
+    }
+
+    expect(store.snapshot().filter((s) => s.from === 'flooder')).toHaveLength(90);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    warnSpy.mockRestore();
+  });
+
+  it('after tokens recover past 1, the next over-budget episode logs again (per-episode, not permanent)', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const store = new StrokeStore({ maxTotalStrokes: 1000, maxStrokesPerSender: 1000 });
+    store.tick(0);
+    for (let i = 0; i < 91; i++) store.apply(startFrame('flooder', `a${i}`), 'flooder');
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+
+    store.tick(2000); // refills tokens well past 1 (2000ms * 0.09/ms = 180, capped at RATE_CAPACITY)
+    store.apply(startFrame('flooder', 'recovered'), 'flooder'); // admitted, re-arms warnedSinceRecovery
+
+    for (let i = 0; i < 91; i++) store.apply(startFrame('flooder', `b${i}`), 'flooder');
+    expect(warnSpy).toHaveBeenCalledTimes(2);
+    warnSpy.mockRestore();
+  });
+
+  it('a rate-limited (dropped) message never reaches decode()', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const decodeSpy = vi.spyOn(codec, 'decode');
+    const store = new StrokeStore({ maxTotalStrokes: 1000, maxStrokesPerSender: 1000 });
+    store.tick(0);
+    for (let i = 0; i < 90; i++) store.apply(startFrame('flooder2', `s${i}`), 'flooder2');
+    expect(decodeSpy).toHaveBeenCalledTimes(90);
+    decodeSpy.mockClear();
+
+    // Over budget now — a deliberately malformed payload must not reach decode().
+    store.apply({ garbage: true }, 'flooder2');
+    expect(decodeSpy).not.toHaveBeenCalled();
+
+    decodeSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it("two senders have fully independent token buckets — flooding 'a' has zero effect on 'b'", () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const store = new StrokeStore({ maxTotalStrokes: 1000, maxStrokesPerSender: 1000 });
+    store.tick(0);
+    for (let i = 0; i < 91; i++) store.apply(startFrame('a', `a${i}`), 'a');
+
+    store.apply(startFrame('b', 'b0'), 'b');
+    expect(store.snapshot().some((s) => s.from === 'b' && s.id === 'b0')).toBe(true);
+    warnSpy.mockRestore();
+  });
+
+  it("apply() of a well-formed Clear payload removes only that sender's strokes, leaving others untouched", () => {
+    const store = new StrokeStore();
+    store.apply(startFrame('p1', 's1'), 'p1');
+    store.apply(startFrame('p2', 's2'), 'p2');
+
+    store.apply({ v: PROTOCOL_VERSION, t: MSG_CLEAR, from: 'p1' }, 'p1');
+
+    expect(store.snapshot().map((s) => s.from)).toEqual(['p2']);
+  });
+
+  it('apply() of a well-formed Presence payload is a deliberate no-op — no state change, no throw, no log', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const store = new StrokeStore();
+    store.apply(startFrame('p1', 's1'), 'p1');
+    const before = store.snapshot();
+
+    expect(() => store.apply({ v: PROTOCOL_VERSION, t: MSG_PRESENCE, from: 'p1', vis: true }, 'p1')).not.toThrow();
+    expect(store.snapshot()).toEqual(before);
     expect(warnSpy).not.toHaveBeenCalled();
     warnSpy.mockRestore();
   });
