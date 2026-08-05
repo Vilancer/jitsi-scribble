@@ -93,17 +93,23 @@ function resolveSend(conference: Record<string, unknown>): SendCandidate {
 
 /**
  * PROTO-08: warn once, at construction, unless P2P is confirmed disabled.
- * Prefers a real, public, non-deprecated conference.isP2PEnabled() getter
- * (verified this session against lib-jitsi-meet's JitsiConference.js — its
- * own semantics already match PROTO-08's "anything other than false"
- * wording: true if the config's p2p.enabled is truthy OR the p2p config
- * block is absent entirely) over the opts.p2pEnabled-only fallback an
- * earlier research pass recommended when no such getter had been found yet.
+ * An explicit host-supplied `opts.p2pEnabled` (true or false) is the
+ * stronger signal and short-circuits entirely — the host set it
+ * deliberately, so it is never second-guessed by a conference getter
+ * (04-02-PLAN.md Task 3's correction of an over-eager fallback: Plan 04-01's
+ * first cut consulted conference.isP2PEnabled() even when opts.p2pEnabled
+ * was explicitly `true`, silently suppressing the warning if the getter
+ * happened to disagree). Only when `opts.p2pEnabled` is left `undefined`
+ * does this fall back to the real, public, non-deprecated
+ * conference.isP2PEnabled() getter (verified this session against
+ * lib-jitsi-meet's JitsiConference.js — its own semantics already match
+ * PROTO-08's "anything other than false" wording: true if the config's
+ * p2p.enabled is truthy OR the p2p config block is absent entirely).
  */
 function warnIfP2pNotConfirmedDisabled(conference: Record<string, unknown>, opts?: FromJitsiConferenceOptions): void {
   if (opts?.p2pEnabled === false) return;
 
-  if (typeof conference.isP2PEnabled === 'function') {
+  if (opts?.p2pEnabled === undefined && typeof conference.isP2PEnabled === 'function') {
     const enabled = (conference.isP2PEnabled as () => boolean)();
     if (enabled === false) return;
   }
