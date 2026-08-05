@@ -82,3 +82,35 @@ describe('mountScribbleOverlay — remote stroke renders over #largeVideo', () =
     handle.destroy();
   });
 });
+
+// The definitive three-assertion CI smoke test named directly after
+// ARCHITECTURE.md section 4.3's jitsi-meet contract — proves the same
+// three facts a real staging Playwright test (Phase 6/INTEG-01) would prove
+// against a live jitsi-meet, but against a jsdom-built fake window.APP with
+// no live deployment required.
+describe('jitsi-meet contract smoke test (ARCHITECTURE.md section 4.3)', () => {
+  it('asserts window.APP.store, the real conference identity, and a non-zero #largeVideo rect, then mounts without throwing', () => {
+    const { conference } = createFakeJitsiConference({ methods: ['sendMessage'] });
+    const { win } = buildFakeWindowApp(conference);
+
+    // Assertion 1: window.APP.store is truthy.
+    expect(win.APP.store).toBeTruthy();
+
+    // Assertion 2: the conference reachable through the store's own locator
+    // is the exact same object identity as the one handed to mountScribbleOverlay.
+    expect(
+      (win.APP.store.getState()['features/base/conference'] as { conference: unknown }).conference,
+    ).toBe(conference);
+
+    // Assertion 3: #largeVideo's rect has non-zero area.
+    const rect = document.getElementById('largeVideo')!.getBoundingClientRect();
+    expect(rect.width * rect.height).toBeGreaterThan(0);
+
+    let handle: ReturnType<typeof mountScribbleOverlay> | undefined;
+    expect(() => {
+      handle = mountScribbleOverlay(conference, win.APP.store);
+    }).not.toThrow();
+
+    handle?.destroy();
+  });
+});

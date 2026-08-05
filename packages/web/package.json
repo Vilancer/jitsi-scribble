@@ -15,5 +15,17 @@
   },
   "dependencies": {
     "@vilancer/protocol": "workspace:*"
+  },
+  "nx": {
+    "targets": {
+      "build": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "vite build",
+          "cwd": "packages/web"
+        },
+        "outputs": ["{projectRoot}/dist"]
+      }
+    }
   }
 }
