@@ -87,4 +87,27 @@ describe('codec', () => {
     const result = decode('not json at all');
     expect(result).toEqual({ ok: false, error: 'invalid-json' });
   });
+
+  it("decode() of an End frame with kind:'tap' returns frame.kind === 'tap' (D-01)", () => {
+    const result = decode(JSON.stringify({ v: 1, t: 'e', from: 'p1', id: 'i1', kind: 'tap' }));
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.frame.t === 'e' && result.frame.kind).toBe('tap');
+  });
+
+  it("decode() of an End frame with kind:'stroke' returns frame.kind === 'stroke' (D-01)", () => {
+    const result = decode(JSON.stringify({ v: 1, t: 'e', from: 'p1', id: 'i1', kind: 'stroke' }));
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.frame.t === 'e' && result.frame.kind).toBe('stroke');
+  });
+
+  it("decode() of an End frame with kind:'bogus' returns {ok:false, error:'invalid-type'} (D-01, T-05-04)", () => {
+    const result = decode(JSON.stringify({ v: 1, t: 'e', from: 'p1', id: 'i1', kind: 'bogus' }));
+    expect(result).toEqual({ ok: false, error: 'invalid-type' });
+  });
+
+  it('decode() of an End frame with no kind field has no kind key present at all (D-01)', () => {
+    const result = decode(JSON.stringify({ v: 1, t: 'e', from: 'p1', id: 'i1' }));
+    expect(result.ok).toBe(true);
+    expect(result.ok && Object.keys(result.frame)).not.toContain('kind');
+  });
 });

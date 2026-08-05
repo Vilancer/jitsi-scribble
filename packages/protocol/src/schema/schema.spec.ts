@@ -32,4 +32,16 @@ describe('WireFrameSchema', () => {
     const result = Schema.decodeUnknownSync(WireFrameSchema)(input);
     expect(result).toEqual(input);
   });
+
+  it("decodes an EndFrame with kind:'tap' structurally equal to the input (D-01)", () => {
+    const input = { v: 1, t: 'e', from: 'p1', id: 'str1', kind: 'tap' };
+    const result = Schema.decodeUnknownSync(WireFrameSchema)(input);
+    expect(result).toEqual(input);
+  });
+
+  it("rejects an EndFrame with kind:'bogus' — Left result (D-01, T-05-04)", () => {
+    const input = { v: 1, t: 'e', from: 'p1', id: 'str1', kind: 'bogus' };
+    const result = Schema.decodeUnknownEither(WireFrameSchema)(input);
+    expect(result._tag).toBe('Left');
+  });
 });
