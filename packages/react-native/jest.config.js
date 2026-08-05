@@ -7,4 +7,12 @@
 /** @type {import('jest').Config} */
 export default {
   preset: 'jest-expo',
+  // This package's TS sources use nodenext-style explicit `.js` extensions
+  // on relative imports (e.g. `./gestureClassifier.js`, matching
+  // packages/protocol's own convention) even though the file on disk is
+  // `.ts` — strip the extension so Jest's resolver falls through to
+  // moduleFileExtensions and finds the real .ts/.tsx file.
+  moduleNameMapper: {
+    '^(\\.{1,2}/.*)\\.js$': '$1',
+  },
 };

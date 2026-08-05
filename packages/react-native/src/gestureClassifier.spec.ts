@@ -27,13 +27,15 @@ describe('classifyGesture', () => {
     expect(classifyGesture(500, 2000)).toBe('stroke');
   });
 
-  it('carries a leading worklet directive and has zero import statements', () => {
+  it('carries a leading worklet directive as classifyGesture function body\'s own first statement, and has zero import statements', () => {
     const source = readFileSync(path.join(__dirname, 'gestureClassifier.ts'), 'utf8');
-    const firstStatement = source
+    const functionBodyOpen = source.indexOf('{', source.indexOf('function classifyGesture'));
+    const firstStatementInBody = source
+      .slice(functionBodyOpen + 1)
       .split('\n')
       .map((line) => line.trim())
       .find((line) => line.length > 0 && !line.startsWith('//'));
-    expect(firstStatement).toBe("'worklet';");
+    expect(firstStatementInBody).toBe("'worklet';");
     expect(source).not.toMatch(/^\s*import /m);
   });
 });
