@@ -68,11 +68,19 @@ const MoveFrameSchema = Schema.Struct({
   pts: Schema.Array(Point).pipe(Schema.minItems(1), Schema.maxItems(MAX_POINTS_PER_MESSAGE)),
 });
 
+/** D-01's tap/drag classification, carried on the End frame only. Optional —
+ * an End frame with no `kind` field is a valid, pre-existing shape (every
+ * Phase 2/3/4 message). Must agree with codec.decode()'s MSG_END case's
+ * hand-written `obj.kind === 'tap' || obj.kind === 'stroke'` check (see
+ * roundtrip.spec.ts's accept/reject parity assertions). */
+const StrokeKind = Schema.Literal('tap', 'stroke');
+
 const EndFrameSchema = Schema.Struct({
   v: Version,
   t: Schema.Literal(MSG_END),
   from: Identifier,
   id: Identifier,
+  kind: Schema.optional(StrokeKind),
 });
 
 const ClearFrameSchema = Schema.Struct({

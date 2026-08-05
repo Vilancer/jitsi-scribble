@@ -159,9 +159,25 @@ export function decode(raw: unknown): DecodeResult {
       const idError = checkIdentifier(obj.id);
       if (idError) return { ok: false, error: idError };
 
+      // D-01: kind is optional — an omitted field is valid (every pre-Phase-5
+      // End frame). If present, it must be exactly 'tap' or 'stroke'; any
+      // other value is a forged/invalid field, rejected the same way every
+      // other typed field in this file rejects (T-05-04).
+      let kind: 'tap' | 'stroke' | undefined;
+      if ('kind' in obj) {
+        if (obj.kind !== 'tap' && obj.kind !== 'stroke') return { ok: false, error: 'invalid-type' };
+        kind = obj.kind;
+      }
+
       return {
         ok: true,
-        frame: { v: obj.v as 1, t: MSG_END, from: obj.from as string, id: obj.id as string },
+        frame: {
+          v: obj.v as 1,
+          t: MSG_END,
+          from: obj.from as string,
+          id: obj.id as string,
+          ...(kind !== undefined ? { kind } : {}),
+        },
       };
     }
 
