@@ -8,6 +8,8 @@ import { computeStrokeWidth, denormalize } from '@vilancer/protocol/geometry';
 import type { Stroke, StrokeStore } from '@vilancer/protocol/core';
 import { CASING_COLOUR, CASING_EXTRA_WIDTH_DP, CORE_WIDTH_DP, colourForParticipant } from '@vilancer/protocol/render';
 
+import { observeContentRectChanges } from './jitsiMeetWeb.js';
+
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 const HOST_ID = 'largeVideoContainer';
@@ -78,9 +80,15 @@ export function mountRenderer(store: StrokeStore, getRect: () => ContentRect | n
   const unsubscribe = store.subscribe(repaint);
   repaint(store.snapshot());
 
+  // WEB-03: re-read the content rect and repaint whenever #largeVideo /
+  // #largeVideoContainer resize (filmstrip toggle, window resize) instead of
+  // only once at mount — see jitsiMeetWeb.ts's observeContentRectChanges.
+  const unobserveContentRect = observeContentRectChanges(() => repaint(store.snapshot()));
+
   return {
     destroy(): void {
       unsubscribe();
+      unobserveContentRect();
       svg.remove();
     },
   };

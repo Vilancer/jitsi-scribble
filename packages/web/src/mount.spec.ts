@@ -16,7 +16,19 @@ const START_FRAME = {
   frame: { w: 1920, h: 1080 },
 };
 
+// jsdom ships no real ResizeObserver (04-RESEARCH.md Common Pitfalls) —
+// render.ts's mountRenderer now wires observeContentRectChanges
+// (jitsiMeetWeb.ts, Plan 04-03) at mount time, so every test that reaches
+// mountRenderer needs this stubbed regardless of whether it exercises resize
+// behaviour directly.
+class FakeResizeObserver {
+  observe(): void {}
+  disconnect(): void {}
+  unobserve(): void {}
+}
+
 beforeEach(() => {
+  (globalThis as unknown as { ResizeObserver: typeof FakeResizeObserver }).ResizeObserver = FakeResizeObserver;
   document.body.innerHTML = `
     <div id="largeVideoContainer">
       <video id="largeVideo"></video>

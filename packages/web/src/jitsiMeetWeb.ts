@@ -58,3 +58,29 @@ export function readContentRect(): ContentRect | null {
   const hr = host.getBoundingClientRect();
   return { x: vr.left - hr.left, y: vr.top - hr.top, w: vr.width, h: vr.height };
 }
+
+/**
+ * WEB-03's resize-reactive half of Pattern 5: jitsi jQuery-animates
+ * `#largeVideoWrapper` over ~500ms on filmstrip toggles (ARCHITECTURE.md
+ * section 4.3 Open Question 4), so a content rect read once at mount goes
+ * stale the moment the filmstrip opens/closes or the window resizes. A
+ * single `ResizeObserver` watches both `#largeVideo` and
+ * `#largeVideoContainer` and invokes `onChange` once per observer batch
+ * (native ResizeObserver batching already coalesces the two elements'
+ * entries into one callback firing — this never fires `onChange` twice for
+ * one physical resize). Never recomputes letterbox math itself — `onChange`
+ * is expected to re-call `readContentRect()`, not receive geometry directly.
+ * If neither element exists yet at call time, returns a callable no-op
+ * unsubscribe rather than throwing (WEB-05's boundary contract).
+ */
+export function observeContentRectChanges(onChange: () => void): () => void {
+  const vid = document.getElementById('largeVideo');
+  const host = document.getElementById('largeVideoContainer');
+  if (!vid || !host) return () => {};
+
+  const observer = new ResizeObserver(() => onChange());
+  observer.observe(vid);
+  observer.observe(host);
+
+  return () => observer.disconnect();
+}
