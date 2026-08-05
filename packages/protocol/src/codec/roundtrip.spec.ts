@@ -18,6 +18,8 @@ const handPickedValidFrames: WireFrame[] = [
   { v: 1, t: 'm', from: 'p1', id: 'i1', pts: [[0, 0]] },
   { v: 1, t: 'm', from: 'p1', id: 'i1', pts: [[0, 0], [4095, 4095]] },
   { v: 1, t: 'e', from: 'p1', id: 'i1' },
+  { v: 1, t: 'e', from: 'p1', id: 'i1', kind: 'tap' },
+  { v: 1, t: 'e', from: 'p1', id: 'i1', kind: 'stroke' },
   { v: 1, t: 'c', from: 'p1' },
   { v: 1, t: 'p', from: 'p1', vis: true },
   { v: 1, t: 'p', from: 'p1', vis: false },
@@ -35,8 +37,14 @@ function randomValidFrame(): WireFrame {
       return { v: 1, t, from: 'p1', id: 'i1', p: randomValidPoint(), frame: { w: 100, h: 100 } };
     case 'm':
       return { v: 1, t, from: 'p1', id: 'i1', pts: Array.from({ length: 1 + Math.floor(Math.random() * 64) }, randomValidPoint) };
-    case 'e':
-      return { v: 1, t, from: 'p1', id: 'i1' };
+    case 'e': {
+      // D-01: randomly omit kind, or set it to 'tap'/'stroke' — same unseeded
+      // Math.random() convention case 'p' already uses for its boolean vis
+      // field, exercising all three End-frame shapes with no fixed seed.
+      const r = Math.random();
+      const kind: 'tap' | 'stroke' | undefined = r < 1 / 3 ? undefined : r < 2 / 3 ? 'tap' : 'stroke';
+      return { v: 1, t, from: 'p1', id: 'i1', ...(kind !== undefined ? { kind } : {}) };
+    }
     case 'c':
       return { v: 1, t, from: 'p1' };
     case 'p':
@@ -66,6 +74,7 @@ describe('accept/reject parity: schema and codec agree on every hostile case', (
     { t: 's', from: 'p1', id: 'i1', p: [0, 0], frame: { w: 1, h: 1 } },
     { v: 2, t: 's', from: 'p1', id: 'i1', p: [0, 0], frame: { w: 1, h: 1 } },
     { v: 1, t: 's', from: 'p1', p: [0, 0], frame: { w: 1, h: 1 } }, // missing id
+    { v: 1, t: 'e', from: 'p1', id: 'i1', kind: 'bogus' }, // D-01, T-05-04: forged kind value
   ];
 
   for (const hostile of hostileCases) {
