@@ -155,6 +155,16 @@ class JitsiTransportAdapter implements ScribbleTransport {
         const from = participant?.getId?.() ?? '';
         for (const fn of this.subscribers) fn(from, payload);
       });
+    } else {
+      // WR-04 fix (04-REVIEW.md): real lib-jitsi-meet always provides
+      // conference.on via Listenable, so this branch is defensive-only —
+      // but taking it silently means no DATA_CHANNEL_CLOSED/OPENED and no
+      // ENDPOINT_MESSAGE_RECEIVED listener is ever attached: incoming
+      // strokes are never received, degrade-on-close never fires, and the
+      // optimistic 'ready' default above is never corrected if wrong. Every
+      // other giving-up path in this file warns; this one previously did
+      // not.
+      console.warn('[jitsi-scribble] conference.on is not a function — annotation will never become ready');
     }
   }
 
