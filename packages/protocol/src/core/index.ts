@@ -136,6 +136,13 @@ export interface Stroke {
   readonly phase: 'live' | 'fading' | 'dead';
   readonly fadeStartedAt: number | undefined;
   readonly alpha: number;
+  /** D-01's tap/drag classification, set only by endLocal(id, kind) or by an
+   * inbound End WireFrame carrying `kind`. `undefined` (never a literal
+   * 'stroke' default assigned anywhere in this file) is the correct value
+   * for every stroke that hasn't ended yet, or ended before this field
+   * existed — "defaults to stroke" is a rendering-layer convention a
+   * consumer applies via its own `stroke.kind === 'tap'` check. */
+  readonly kind: 'tap' | 'stroke' | undefined;
 }
 
 /** Internal-only stroke record — a mutable working copy of `Stroke`'s
@@ -156,6 +163,7 @@ interface StrokeInternal {
   endedAt: number | undefined;
   lastMoveAt: number;
   createdAt: number;
+  kind: 'tap' | 'stroke' | undefined;
 }
 
 interface StoreState {
@@ -232,6 +240,7 @@ function toPublicStroke(s: StrokeInternal): Stroke {
     phase: s.phase,
     fadeStartedAt: s.fadeStartedAt,
     alpha: s.alpha,
+    kind: s.kind,
   };
 }
 
@@ -387,6 +396,7 @@ export class StrokeStore {
           endedAt: undefined,
           createdAt: this.lastTickNow,
           lastMoveAt: this.lastTickNow,
+          kind: undefined,
         };
         s.strokes.set(this.key(LOCAL_SENDER, id), internal);
         return s;
@@ -450,7 +460,7 @@ export class StrokeStore {
    * buffered movement is silently lost when the finger lifts mid-coalescing-
    * window), THEN emits an End WireFrame — in that order — and finally
    * garbage-collects this stroke's localOutbound bookkeeping entry. */
-  endLocal(id: string): void {
+  endLocal(id: string, kind?: 'tap' | 'stroke'): void {
     const key = this.key(LOCAL_SENDER, id);
     const existing = Effect.runSync(Ref.get(this.state)).strokes.get(key);
     const shouldEnd = existing !== undefined && existing.endedAt === undefined;
@@ -462,13 +472,20 @@ export class StrokeStore {
         const entry = s.strokes.get(key);
         if (entry && entry.endedAt === undefined) {
           entry.endedAt = this.lastTickNow;
+          if (kind !== undefined) entry.kind = kind;
         }
         return s;
       }),
     );
 
     if (shouldEnd) {
-      this.emitOutbound({ v: PROTOCOL_VERSION, t: MSG_END, from: this.localId, id });
+      this.emitOutbound({
+        v: PROTOCOL_VERSION,
+        t: MSG_END,
+        from: this.localId,
+        id,
+        ...(kind !== undefined ? { kind } : {}),
+      });
       this.localOutbound.delete(id);
     }
 
@@ -629,6 +646,7 @@ export class StrokeStore {
               endedAt: undefined,
               createdAt: this.lastTickNow,
               lastMoveAt: this.lastTickNow,
+              kind: undefined,
             };
             s.strokes.set(key, internal);
             return s;
@@ -667,6 +685,7 @@ export class StrokeStore {
                 endedAt: undefined,
                 createdAt: this.lastTickNow,
                 lastMoveAt: this.lastTickNow,
+                kind: undefined,
               };
               this.appendPointsCapped(inserted, dequantizedPoints);
               s.strokes.set(key, inserted);
@@ -684,6 +703,7 @@ export class StrokeStore {
             const entry = s.strokes.get(this.key(from, frame.id));
             if (entry && entry.endedAt === undefined) {
               entry.endedAt = this.lastTickNow;
+              if (frame.kind !== undefined) entry.kind = frame.kind;
             }
             return s;
           }),
@@ -852,6 +872,7 @@ export class StrokeStore {
           endedAt: undefined,
           createdAt: this.lastTickNow,
           lastMoveAt: this.lastTickNow,
+          kind: undefined,
         });
         return s;
       }),
