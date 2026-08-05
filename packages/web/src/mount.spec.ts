@@ -45,4 +45,28 @@ describe('mountScribbleOverlay — remote stroke renders over #largeVideo', () =
 
     expect(document.querySelector('#largeVideoContainer svg')).toBeNull();
   });
+
+  it('never wraps, restyles, or re-parents #largeVideo itself (ARCHITECTURE.md anti-pattern #10)', async () => {
+    const video = document.getElementById('largeVideo')!;
+    const container = document.getElementById('largeVideoContainer')!;
+    const beforeOuterHTML = video.outerHTML;
+    const beforeId = video.id;
+    const beforeClassName = video.className;
+    const beforeStyle = video.getAttribute('style');
+
+    const { conference } = createFakeJitsiConference({ methods: ['sendMessage'] });
+    const { win } = buildFakeWindowApp(conference);
+    const handle = mountScribbleOverlay(conference, win.APP.store);
+
+    // Let one store.tick()/render cycle run via the rAF loop mount.ts drives.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+    expect(video.outerHTML).toBe(beforeOuterHTML);
+    expect(video.id).toBe(beforeId);
+    expect(video.className).toBe(beforeClassName);
+    expect(video.getAttribute('style')).toBe(beforeStyle);
+    expect(video.parentElement).toBe(container);
+
+    handle.destroy();
+  });
 });
