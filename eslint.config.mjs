@@ -45,7 +45,7 @@ export default tseslint.config(
     ],
   },
   {
-    files: ['packages/**/src/**/*.ts'],
+    files: ['packages/**/src/**/*.{ts,tsx}'],
     languageOptions: {
       parser: tseslint.parser,
       parserOptions: {

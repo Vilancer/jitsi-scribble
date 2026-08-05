@@ -31,6 +31,7 @@ const FIXTURES = [
   'bad-lib-jitsi-meet-import.ts.fixture',
   'bad-jitsi-react-native-sdk-import.ts.fixture',
   'bad-react-native-webrtc-import.ts.fixture',
+  'bad-react-native-webrtc-import.tsx.fixture',
 ];
 
 const eslint = new ESLint({ cwd: repoRoot, overrideConfigFile: configFile });
