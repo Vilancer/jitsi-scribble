@@ -84,3 +84,112 @@ describe('fromJitsiConference — probe order (PROTO-05)', () => {
     expect(thrown!.message).toContain('sendEndpointMessage');
   });
 });
+
+// 04-02-PLAN.md Task 2: readiness state machine depth — degraded, re-latch,
+// never-throw. Mirrors protocol/transport/index.ts's onStateChange contract.
+
+describe('fromJitsiConference — readiness state machine depth (PROTO-06/07)', () => {
+  it('send() while connecting is a silent no-op: no underlying call, no throw', () => {
+    const { conference, sentPayloads } = createFakeJitsiConference({ methods: ['sendMessage'] });
+    const transport = fromJitsiConference(conference);
+
+    expect(transport.state).toBe('connecting');
+    expect(() => transport.send('dropped')).not.toThrow();
+    expect(sentPayloads).toEqual([]);
+  });
+
+  it('conference.dataChannelOpened transitions connecting -> ready', () => {
+    const { conference, emit } = createFakeJitsiConference({ methods: ['sendMessage'] });
+    const transport = fromJitsiConference(conference);
+
+    emit('conference.dataChannelOpened');
+
+    expect(transport.state).toBe('ready');
+  });
+
+  it('a ready adapter whose underlying send throws: send() does not throw, state -> degraded', () => {
+    const { conference, emit } = createFakeJitsiConference({ methods: ['sendMessage'], throwOnSend: true });
+    const transport = fromJitsiConference(conference);
+    emit('conference.dataChannelOpened');
+
+    expect(() => transport.send('boom')).not.toThrow();
+    expect(transport.state).toBe('degraded');
+  });
+
+  it('send() while degraded is a silent no-op, same as connecting', () => {
+    const { conference, emit, sentPayloads } = createFakeJitsiConference({
+      methods: ['sendMessage'],
+      throwOnSend: true,
+    });
+    const transport = fromJitsiConference(conference);
+    emit('conference.dataChannelOpened');
+    transport.send('boom'); // throws internally once -> degraded, nothing recorded
+
+    expect(transport.state).toBe('degraded');
+    expect(sentPayloads).toEqual([]);
+
+    transport.send('also-dropped');
+
+    expect(sentPayloads).toEqual([]);
+  });
+
+  it('conference.dataChannelClosed transitions ready -> degraded directly (not only via a throwing send)', () => {
+    const { conference, emit } = createFakeJitsiConference({ methods: ['sendMessage'] });
+    const transport = fromJitsiConference(conference);
+    emit('conference.dataChannelOpened');
+    expect(transport.state).toBe('ready');
+
+    emit('conference.dataChannelClosed');
+
+    expect(transport.state).toBe('degraded');
+  });
+
+  it('a degraded adapter re-latches to ready on a subsequent dataChannelOpened, and send() after re-latch is delivered', () => {
+    const { conference, emit, sentPayloads } = createFakeJitsiConference({ methods: ['sendMessage'] });
+    const transport = fromJitsiConference(conference);
+    emit('conference.dataChannelOpened');
+    emit('conference.dataChannelClosed');
+    expect(transport.state).toBe('degraded');
+
+    emit('conference.dataChannelOpened');
+
+    expect(transport.state).toBe('ready');
+    transport.send('after-relatch');
+    expect(sentPayloads).toEqual([{ method: 'sendMessage', payload: 'after-relatch' }]);
+  });
+
+  it('a throw-induced degraded adapter also re-latches to ready, and a post-relatch send() is delivered via the winner method again', () => {
+    const { conference, emit, sentPayloads } = createFakeJitsiConference({
+      methods: ['sendMessage'],
+      throwOnSend: true,
+    });
+    const transport = fromJitsiConference(conference);
+    emit('conference.dataChannelOpened');
+    transport.send('first'); // throws internally once -> degraded
+    expect(transport.state).toBe('degraded');
+
+    emit('conference.dataChannelOpened'); // re-latch
+
+    expect(transport.state).toBe('ready');
+    transport.send('second');
+    expect(sentPayloads).toEqual([{ method: 'sendMessage', payload: 'second' }]);
+  });
+
+  it('onStateChange(fn) fires fn on every transition in order; unsubscribe stops further notifications', () => {
+    const { conference, emit } = createFakeJitsiConference({ methods: ['sendMessage'] });
+    const transport = fromJitsiConference(conference);
+    const observed: string[] = [];
+    const unsubscribe = transport.onStateChange((s) => observed.push(s));
+
+    emit('conference.dataChannelOpened'); // connecting -> ready
+    emit('conference.dataChannelClosed'); // ready -> degraded
+    emit('conference.dataChannelOpened'); // degraded -> ready
+
+    expect(observed).toEqual(['ready', 'degraded', 'ready']);
+
+    unsubscribe();
+    emit('conference.dataChannelClosed');
+
+    expect(observed).toEqual(['ready', 'degraded', 'ready']);
+  });
+});
