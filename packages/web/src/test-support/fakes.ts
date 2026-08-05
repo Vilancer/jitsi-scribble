@@ -5,6 +5,15 @@ import type { JitsiMeetStore } from '../jitsiMeetWeb.js';
 
 export type FakeConferenceMethod = 'sendMessage' | 'broadcastEndpointMessage' | 'sendEndpointMessage';
 
+/** One recorded underlying send call — which method actually fired, and with
+ * what payload. Distinguishing the method (not just the payload) is what
+ * lets 04-02's probe-order tests assert *which* candidate won, not merely
+ * that *a* send happened (PROTO-05). */
+export interface FakeSentCall {
+  method: FakeConferenceMethod;
+  payload: unknown;
+}
+
 export interface FakeJitsiConference {
   conference: Record<string, unknown>;
   /** Fires every listener registered via conference.on(event, ...) for the
@@ -12,8 +21,9 @@ export interface FakeJitsiConference {
    * conference.dataChannelOpened / conference.dataChannelClosed /
    * conference.endpoint_message_received. */
   emit(event: string, ...args: unknown[]): void;
-  /** Every payload passed to whichever send method was actually called. */
-  sentPayloads: unknown[];
+  /** Every underlying send call that actually completed (i.e. did not throw),
+   * paired with the method name that fired it. */
+  sentPayloads: FakeSentCall[];
 }
 
 /**
@@ -28,10 +38,26 @@ export function createFakeJitsiConference(opts?: {
   methods?: FakeConferenceMethod[];
   p2pEnabled?: boolean;
   myUserId?: string;
+  /** When true, the very first call to whichever send method wins throws
+   * once (simulating a transient underlying failure, e.g. a just-closed
+   * data channel); every call after that first one succeeds normally and is
+   * recorded in `sentPayloads`. Lets 04-02's Task 2 exercise PROTO-06/07's
+   * throw-absorption and degraded-then-re-latch paths without
+   * special-casing fromJitsiConference.ts's production code. */
+  throwOnSend?: boolean;
 }): FakeJitsiConference {
   const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
-  const sentPayloads: unknown[] = [];
+  const sentPayloads: FakeSentCall[] = [];
   const methods = new Set(opts?.methods ?? []);
+  let throwOnNextSend = opts?.throwOnSend ?? false;
+
+  function recordOrThrow(method: FakeConferenceMethod, payload: unknown): void {
+    if (throwOnNextSend) {
+      throwOnNextSend = false;
+      throw new Error(`[fakes] simulated ${method} failure`);
+    }
+    sentPayloads.push({ method, payload });
+  }
 
   const conference: Record<string, unknown> = {
     on(event: string, cb: (...args: unknown[]) => void): void {
@@ -52,17 +78,17 @@ export function createFakeJitsiConference(opts?: {
 
   if (methods.has('sendMessage')) {
     conference.sendMessage = (payload: unknown, _to: string, _viaBridge: boolean): void => {
-      sentPayloads.push(payload);
+      recordOrThrow('sendMessage', payload);
     };
   }
   if (methods.has('broadcastEndpointMessage')) {
     conference.broadcastEndpointMessage = (payload: unknown): void => {
-      sentPayloads.push(payload);
+      recordOrThrow('broadcastEndpointMessage', payload);
     };
   }
   if (methods.has('sendEndpointMessage')) {
     conference.sendEndpointMessage = (_to: string, payload: unknown): void => {
-      sentPayloads.push(payload);
+      recordOrThrow('sendEndpointMessage', payload);
     };
   }
 
