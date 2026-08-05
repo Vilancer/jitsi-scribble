@@ -1,7 +1,16 @@
 packages:
   - 'packages/*'
   - 'apps/*'
+overrides:
+  # jest-expo@55.0.20 declares "expo": "*" with no version constraint at all,
+  # so it otherwise resolves to whatever's latest in the registry (57.x) —
+  # mismatched with this workspace's react-native@0.83.4 (Expo SDK 55).
+  # Pin to the exact SDK-55 expo version from CLAUDE.md's Version
+  # Compatibility table so jest-expo's runtime setup matches the RN version
+  # it's actually testing against.
+  expo: 55.0.28
 allowBuilds:
   '@swc/core': true
   esbuild: true
   nx: true
+  unrs-resolver: true

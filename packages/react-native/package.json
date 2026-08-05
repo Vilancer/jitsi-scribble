@@ -28,7 +28,11 @@
     "react-native-svg": "15.15.5",
     "react-native-gesture-handler": "2.30.0",
     "react-native-reanimated": "4.2.1",
-    "react-native-builder-bob": "0.43.0"
+    "react-native-builder-bob": "0.43.0",
+    "jest": "29.7.0",
+    "jest-expo": "55.0.20",
+    "@testing-library/react-native": "14.0.1",
+    "test-renderer": "1.2.0"
   },
   "nx": {
     "targets": {
@@ -39,6 +43,13 @@
           "cwd": "packages/react-native"
         },
         "outputs": ["{projectRoot}/dist"]
+      },
+      "test": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "jest",
+          "cwd": "packages/react-native"
+        }
       }
     }
   }
