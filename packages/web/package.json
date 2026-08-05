@@ -1,5 +1,5 @@
 {
-  "name": "@jitsi-scribble/web",
+  "name": "@vilancer/web",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -13,5 +13,7 @@
     },
     "./package.json": "./package.json"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@vilancer/protocol": "workspace:*"
+  }
 }

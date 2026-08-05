@@ -10,6 +10,7 @@ export * from './codec/index.js';
 export * from './geometry/index.js';
 export * from './transport/index.js';
 export * from './core/index.js';
+export * from './render/index.js';
 
 // Root-level marker proving the package's own module resolution end to end
 // (consumed by apps/example/src/main.ts and by node -e smoke checks). Each

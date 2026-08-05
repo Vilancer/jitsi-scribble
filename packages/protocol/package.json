@@ -45,6 +45,12 @@
       "react-native": "./dist/core/index.js",
       "import": "./dist/core/index.js",
       "default": "./dist/core/index.js"
+    },
+    "./render": {
+      "types": "./dist/render/index.d.ts",
+      "react-native": "./dist/render/index.js",
+      "import": "./dist/render/index.js",
+      "default": "./dist/render/index.js"
     }
   },
   "files": [
