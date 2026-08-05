@@ -12,7 +12,20 @@ interface WindowWithJitsiMeetJS {
 
 /** The handle returned by `mountScribbleOverlay` — call `destroy()` to
  * cancel the rAF loop, unsubscribe from both the transport and the
- * jitsiStore, and remove the mounted SVG overlay. */
+ * jitsiStore, and remove the mounted SVG overlay.
+ *
+ * Accepted limitation (WR-03, 04-REVIEW.md): "unsubscribe ... from the
+ * transport" means removing this module's own `Set` entry via
+ * `transport.subscribe()`'s returned unsubscribe function — it does not,
+ * and currently cannot, remove the underlying `conference.on(events.X, ...)`
+ * listeners `fromJitsiConference`'s adapter registers in its constructor.
+ * `ScribbleTransport` (protocol) exposes no `destroy()`/`off()` hook for a
+ * real adapter to implement, so those closures (and the `conference`
+ * reference they close over) remain live for as long as the underlying
+ * `conference` object exists, even after this handle's `destroy()` returns.
+ * Widening `ScribbleTransport` with an optional detach hook is the fix if
+ * this proves to matter in practice (e.g. repeated mount/destroy cycles on
+ * the same long-lived conference). */
 export interface ScribbleOverlayHandle {
   destroy(): void;
 }
