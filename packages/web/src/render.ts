@@ -51,6 +51,12 @@ function svgPath(d: string, widthPx: number, colour: string, alpha: number): SVG
 export function mountRenderer(store: StrokeStore, getRect: () => ContentRect | null): { destroy(): void } {
   const host = document.getElementById(HOST_ID);
   if (!host) {
+    // WR-01 fix (04-REVIEW.md): every other give-up path in this phase
+    // (whenConference's 60s timeout, fromJitsiConference's p2p warning,
+    // bootstrap.ts's mount-failure catch) logs a console.warn so the
+    // failure is at least observable in devtools — this was the only
+    // silent one.
+    console.warn('[jitsi-scribble] #largeVideoContainer not found at mount time — overlay disabled');
     return { destroy() {} };
   }
 
