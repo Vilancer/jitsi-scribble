@@ -1,7 +1,6 @@
 {
-  "name": "jitsi-scribble",
+  "name": "@vilancer/react-native",
   "version": "0.0.1",
-  "private": true,
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -13,5 +12,34 @@
     },
     "./package.json": "./package.json"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@vilancer/protocol": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": ">=19.0.0",
+    "react-native": ">=0.79.0",
+    "react-native-svg": ">=15.11.0",
+    "react-native-gesture-handler": ">=2.30.0",
+    "react-native-reanimated": ">=4.0.0"
+  },
+  "devDependencies": {
+    "react": "19.2.0",
+    "react-native": "0.83.4",
+    "react-native-svg": "15.15.5",
+    "react-native-gesture-handler": "2.30.0",
+    "react-native-reanimated": "4.2.1",
+    "react-native-builder-bob": "0.43.0"
+  },
+  "nx": {
+    "targets": {
+      "build": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "bob build",
+          "cwd": "packages/react-native"
+        },
+        "outputs": ["{projectRoot}/dist"]
+      }
+    }
+  }
 }
