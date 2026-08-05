@@ -38,9 +38,18 @@ export function mountScribbleOverlay(conference: unknown, jitsiStore: JitsiMeetS
   const unsubscribeTransport = transport.subscribe((from, payload) => store.apply(payload, from));
 
   let rafId: number | null = null;
+  // WR-02 fix (04-REVIEW.md): store.tick() synchronously invokes every
+  // store.subscribe/onOutbound listener. If a future subscriber calls
+  // destroy() reentrantly from within that synchronous callback chain,
+  // cancelAnimationFrame(rafId) below only cancels the currently-executing
+  // frame — frame() would otherwise unconditionally reschedule itself
+  // immediately afterward, leaving an uncancellable orphaned loop. The
+  // `destroyed` flag makes the reschedule itself conditional so the loop
+  // actually stops regardless of reentrancy ordering.
+  let destroyed = false;
   function frame(): void {
     store.tick(Date.now());
-    rafId = requestAnimationFrame(frame);
+    if (!destroyed) rafId = requestAnimationFrame(frame);
   }
   rafId = requestAnimationFrame(frame);
 
@@ -61,6 +70,7 @@ export function mountScribbleOverlay(conference: unknown, jitsiStore: JitsiMeetS
 
   return {
     destroy(): void {
+      destroyed = true;
       if (rafId !== null) cancelAnimationFrame(rafId);
       unsubscribeTransport();
       unsubscribeStore();
