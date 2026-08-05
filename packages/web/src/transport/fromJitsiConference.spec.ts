@@ -89,16 +89,24 @@ describe('fromJitsiConference — probe order (PROTO-05)', () => {
 // never-throw. Mirrors protocol/transport/index.ts's onStateChange contract.
 
 describe('fromJitsiConference — readiness state machine depth (PROTO-06/07)', () => {
-  it('send() while connecting is a silent no-op: no underlying call, no throw', () => {
+  // CR-01 fix (04-REVIEW.md): the adapter now defaults optimistically to
+  // 'ready' at construction (not 'connecting'), because DATA_CHANNEL_OPENED
+  // is a one-shot event with no replay semantics — an adapter constructed
+  // after the real data channel already opened would otherwise get stuck
+  // 'connecting' forever with every send() silently dropped. This is exactly
+  // that "constructed after the channel is already open" scenario: no
+  // dataChannelOpened event is ever emitted here, yet send() must still
+  // succeed immediately.
+  it('adapter starts ready optimistically (no dataChannelOpened event needed) so send() succeeds immediately after construction', () => {
     const { conference, sentPayloads } = createFakeJitsiConference({ methods: ['sendMessage'] });
     const transport = fromJitsiConference(conference);
 
-    expect(transport.state).toBe('connecting');
-    expect(() => transport.send('dropped')).not.toThrow();
-    expect(sentPayloads).toEqual([]);
+    expect(transport.state).toBe('ready');
+    expect(() => transport.send('immediate')).not.toThrow();
+    expect(sentPayloads).toEqual([{ method: 'sendMessage', payload: 'immediate' }]);
   });
 
-  it('conference.dataChannelOpened transitions connecting -> ready', () => {
+  it('conference.dataChannelOpened is an idempotent no-op when already ready (the "normal" case: adapter constructed before the real event fires)', () => {
     const { conference, emit } = createFakeJitsiConference({ methods: ['sendMessage'] });
     const transport = fromJitsiConference(conference);
 
@@ -175,22 +183,22 @@ describe('fromJitsiConference — readiness state machine depth (PROTO-06/07)', 
     expect(sentPayloads).toEqual([{ method: 'sendMessage', payload: 'second' }]);
   });
 
-  it('onStateChange(fn) fires fn on every transition in order; unsubscribe stops further notifications', () => {
+  it('onStateChange(fn) fires fn on every transition in order (subscribing after construction, when the adapter is already ready by default, observes no initial-ready transition); unsubscribe stops further notifications', () => {
     const { conference, emit } = createFakeJitsiConference({ methods: ['sendMessage'] });
     const transport = fromJitsiConference(conference);
     const observed: string[] = [];
     const unsubscribe = transport.onStateChange((s) => observed.push(s));
 
-    emit('conference.dataChannelOpened'); // connecting -> ready
+    emit('conference.dataChannelOpened'); // already ready -> no-op, not observed
     emit('conference.dataChannelClosed'); // ready -> degraded
     emit('conference.dataChannelOpened'); // degraded -> ready
 
-    expect(observed).toEqual(['ready', 'degraded', 'ready']);
+    expect(observed).toEqual(['degraded', 'ready']);
 
     unsubscribe();
     emit('conference.dataChannelClosed');
 
-    expect(observed).toEqual(['ready', 'degraded', 'ready']);
+    expect(observed).toEqual(['degraded', 'ready']);
   });
 });
 

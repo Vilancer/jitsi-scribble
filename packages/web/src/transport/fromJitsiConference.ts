@@ -124,7 +124,19 @@ function warnIfP2pNotConfirmedDisabled(conference: Record<string, unknown>, opts
 class JitsiTransportAdapter implements ScribbleTransport {
   private readonly conference: Record<string, unknown>;
   private readonly winner: SendCandidate;
-  private _state: TransportState = 'connecting';
+  // CR-01 fix (04-REVIEW.md): default optimistically to 'ready' rather than
+  // 'connecting'. lib-jitsi-meet's DATA_CHANNEL_OPENED is a one-shot event
+  // with no replay-to-late-subscribers semantics and no public getter to
+  // query current channel state, so if the channel opened before this
+  // adapter's constructor ran (a real possibility — mountScribbleOverlay is
+  // gated behind a 250ms poll of window.APP.store, unsynchronized with the
+  // channel's own open event), a 'connecting' default would leave send()
+  // permanently dropping every message with zero diagnostic. Guessing
+  // 'ready' and being wrong is already covered by the existing degrade
+  // path below (DATA_CHANNEL_CLOSED, or a thrown send) — PROTO-06/07's
+  // "send never throws, degrade on failure" contract is the safety net for
+  // this optimistic guess.
+  private _state: TransportState = 'ready';
   private readonly subscribers = new Set<(from: string, payload: unknown) => void>();
   private readonly stateListeners = new Set<(s: TransportState) => void>();
 
