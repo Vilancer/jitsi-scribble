@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { fromJitsiConference } from './fromJitsiConference.js';
 import { createFakeJitsiConference } from '../test-support/fakes.js';
@@ -191,5 +191,63 @@ describe('fromJitsiConference — readiness state machine depth (PROTO-06/07)', 
     emit('conference.dataChannelClosed');
 
     expect(observed).toEqual(['ready', 'degraded', 'ready']);
+  });
+});
+
+// 04-02-PLAN.md Task 3: every p2p.enabled warning branch PROTO-08 describes,
+// including the conference.isP2PEnabled() correction found during Plan 04-01.
+
+describe('fromJitsiConference — p2p warning branch matrix (PROTO-08)', () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
+  it('opts.p2pEnabled: false suppresses the warning, regardless of conference.isP2PEnabled', () => {
+    const { conference } = createFakeJitsiConference({ methods: ['sendMessage'], p2pEnabled: true });
+
+    fromJitsiConference(conference, { p2pEnabled: false });
+
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('opts.p2pEnabled: true fires the warning even if conference.isP2PEnabled() would return false', () => {
+    const { conference } = createFakeJitsiConference({ methods: ['sendMessage'], p2pEnabled: false });
+
+    fromJitsiConference(conference, { p2pEnabled: true });
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0]?.[0]).toMatch(/^\[jitsi-scribble\] /);
+  });
+
+  it('no opts.p2pEnabled, conference has no isP2PEnabled method: warns (unconfirmed defaults to warn)', () => {
+    const { conference } = createFakeJitsiConference({ methods: ['sendMessage'] });
+
+    fromJitsiConference(conference);
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0]?.[0]).toMatch(/^\[jitsi-scribble\] /);
+  });
+
+  it('no opts.p2pEnabled, conference.isP2PEnabled() returns false: no warning', () => {
+    const { conference } = createFakeJitsiConference({ methods: ['sendMessage'], p2pEnabled: false });
+
+    fromJitsiConference(conference);
+
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('no opts.p2pEnabled, conference.isP2PEnabled() returns true: warns', () => {
+    const { conference } = createFakeJitsiConference({ methods: ['sendMessage'], p2pEnabled: true });
+
+    fromJitsiConference(conference);
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0]?.[0]).toMatch(/^\[jitsi-scribble\] /);
   });
 });
