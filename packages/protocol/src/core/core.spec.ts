@@ -822,6 +822,66 @@ describe('MOVE_WIRE_BYTE_BUDGET — proven against the coalescer\'s real typical
   });
 });
 
+describe('StrokeStore.kind — D-01 tap/drag classification carried end-to-end', () => {
+  it("endLocal(id, 'tap') ends the stroke with kind === 'tap' in its next snapshot(), and emits an End WireFrame carrying kind: 'tap'", () => {
+    const store = new StrokeStore();
+    const frames: any[] = [];
+    store.onOutbound((f) => frames.push(f));
+
+    store.beginLocal('s1', { w: 1, h: 1 });
+    store.appendLocal('s1', 0.5, 0.5);
+    store.endLocal('s1', 'tap');
+
+    expect(store.snapshot()[0].kind).toBe('tap');
+    const endFrame = frames.find((f) => f.t === MSG_END);
+    expect(endFrame).toMatchObject({ t: MSG_END, kind: 'tap' });
+  });
+
+  it("endLocal(id, 'stroke') behaves identically but with kind === 'stroke'", () => {
+    const store = new StrokeStore();
+    const frames: any[] = [];
+    store.onOutbound((f) => frames.push(f));
+
+    store.beginLocal('s1', { w: 1, h: 1 });
+    store.appendLocal('s1', 0.5, 0.5);
+    store.endLocal('s1', 'stroke');
+
+    expect(store.snapshot()[0].kind).toBe('stroke');
+    const endFrame = frames.find((f) => f.t === MSG_END);
+    expect(endFrame).toMatchObject({ t: MSG_END, kind: 'stroke' });
+  });
+
+  it('the existing no-kind-argument endLocal(id) call shape still works exactly as before — kind left undefined', () => {
+    const store = new StrokeStore();
+    store.beginLocal('s1', { w: 1, h: 1 });
+    store.endLocal('s1');
+
+    expect(store.snapshot()[0].kind).toBeUndefined();
+  });
+
+  it("apply() of an End frame carrying kind:'tap' sets the matching open stroke's kind in its next snapshot()", () => {
+    const store = new StrokeStore();
+    store.apply(
+      { v: PROTOCOL_VERSION, t: MSG_START, from: 'p1', id: 's1', p: [2048, 2048], frame: { w: 1, h: 1 } },
+      'p1',
+    );
+    store.apply({ v: PROTOCOL_VERSION, t: MSG_END, from: 'p1', id: 's1', kind: 'stroke' }, 'p1');
+
+    expect(store.snapshot()[0].kind).toBe('stroke');
+  });
+
+  it('apply() of an End frame with no kind field leaves an existing stroke\'s kind at whatever it already was', () => {
+    const store = new StrokeStore();
+    store.apply(
+      { v: PROTOCOL_VERSION, t: MSG_START, from: 'p1', id: 's1', p: [2048, 2048], frame: { w: 1, h: 1 } },
+      'p1',
+    );
+    store.apply({ v: PROTOCOL_VERSION, t: MSG_END, from: 'p1', id: 's1' }, 'p1');
+
+    expect(store.snapshot()[0].kind).toBeUndefined();
+  });
+});
+
 describe('StrokeStore two-store round trip through MemoryTransport — the phase close-out proof', () => {
   it("storeA's full local stroke lifecycle (begin, two appends, a coalesce-window tick, end) round-trips into storeB.snapshot() within 1/QUANT_STEPS tolerance", () => {
     const [transportA, transportB] = createMemoryTransportPair('a', 'b');
