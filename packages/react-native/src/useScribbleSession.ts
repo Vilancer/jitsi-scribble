@@ -152,6 +152,22 @@ export function useScribbleSession(options: UseScribbleSessionOptions): UseScrib
 
     let destroyed = false;
 
+    // Plan 05-04 fix (Rule 2 - missing critical functionality, found
+    // integrating ScribbleOverlay/the end-to-end MemoryTransport test):
+    // PROTO-03's own onOutbound(fn) hook exists precisely so a host glue
+    // layer can wire store.onOutbound(frame => transport.send(frame)) — see
+    // protocol/core/index.ts's own doc comment naming exactly this call —
+    // but this file never called it. Without this wire-up, beginLocal/
+    // appendLocal/endLocal's coalesced Start/Move/End WireFrames were
+    // computed and handed to emitOutbound(), then dropped: nothing ever
+    // reached transport.send(), so a locally-authored stroke NEVER crossed
+    // the wire to a remote peer — the single most basic requirement this
+    // whole library exists for (PROJECT.md's Core Value). Presence stays
+    // hand-built via transport.send() directly (D-02, unchanged) — this
+    // hook is for STROKE authoring frames only, never re-emitting anything
+    // apply() already ingested (T-03-03-01, StrokeStore's own contract).
+    const unsubscribeOutbound = store.onOutbound((frame) => transport.send(frame));
+
     const unsubscribeTransport = transport.subscribe((from, payload) => {
       const result = decode(payload);
       if (!result.ok) return;
@@ -224,6 +240,7 @@ export function useScribbleSession(options: UseScribbleSessionOptions): UseScrib
     return (): void => {
       destroyed = true;
       if (rafId !== null) cancelAnimationFrame(rafId);
+      unsubscribeOutbound();
       unsubscribeTransport();
       unsubscribeStore();
       appStateSubscription.remove();
