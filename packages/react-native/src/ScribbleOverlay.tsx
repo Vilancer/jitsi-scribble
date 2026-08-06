@@ -298,6 +298,22 @@ function TapRing({
     // Runs once per stroke's lifetime (this component mounts fresh per
     // stroke id, keyed by the caller) — UI-SPEC Resolution 2B: reduced
     // motion skips ONLY this expand animation, never the hold/fade.
+    //
+    // 05-REVIEW.md WR-04 (accepted, documented limitation — the review's own
+    // "optional" framing): `targetRadius` is captured once here, from
+    // whatever `fitRatio`/`surfaceBox` this component saw at ITS OWN mount.
+    // If the surface box changes mid-tap-ring-lifetime (e.g. a device
+    // rotation during the ~2.5s hold+fade window), the already-committed
+    // `targetRadius` this effect animates toward does NOT re-derive from the
+    // new fit ratio — the ring's expanded size stays keyed to whatever
+    // orientation was current when the tap first landed. Low practical
+    // impact given how short a tap-ring's lifetime is, and re-deriving it
+    // would mean either re-running this expand animation on every
+    // surfaceBox change (visibly re-triggering the expand, which UI-SPEC
+    // Resolution 2B reserves for mount only) or introducing a second,
+    // independent effect solely to correct `radius.value` outside the
+    // animation this one drives — both add real complexity for a narrow,
+    // short-lived edge case. Deliberately not fixed.
     if (!reducedMotion) {
       radius.value = withTiming(targetRadius, { duration: TAP_RING_EXPAND_MS });
     }
