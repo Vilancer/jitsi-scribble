@@ -58,23 +58,37 @@ export function useContentRect(frameDims: FrameDims | undefined): UseContentRect
     [],
   );
 
-  // 05-REVIEW.md CR-01 (re-review): keyed on frameDims's PRIMITIVE w/h
-  // values, not the object reference. A host passing an inline, unmemoized
-  // `frameDims={{ w, h }}` object literal — the natural, undocumented way to
-  // pass live video dimensions — produced a brand-new reference every render
-  // even when the underlying numbers never changed, which churned this
-  // memo's own identity and cascaded into useScribbleSession.ts's
-  // `appendLocal` (keyed on `[contentRect]`), then ScribbleOverlay.tsx's
-  // `onLocalBegin`/`onLocalSample`, then gesture.ts's memoized `Gesture.Pan()`
-  // — reopening WR-02's `pan`-identity-churn bug via a second, independent
-  // path. Depending on `frameDims?.w`/`frameDims?.h` directly means an
-  // unstable `frameDims` reference with the same numbers no longer changes
-  // this memo's result identity.
+  // 05-REVIEW.md CR-01 (re-review, round 2): keyed on frameDims's PRIMITIVE
+  // w/h values, not the object reference. A host passing an inline,
+  // unmemoized `frameDims={{ w, h }}` object literal — the natural,
+  // undocumented way to pass live video dimensions — produced a brand-new
+  // reference every render even when the underlying numbers never changed,
+  // which churned this memo's own identity and cascaded into
+  // useScribbleSession.ts's `appendLocal` (keyed on `[contentRect]`), then
+  // ScribbleOverlay.tsx's `onLocalBegin`/`onLocalSample`, then gesture.ts's
+  // memoized `Gesture.Pan()` — reopening WR-02's `pan`-identity-churn bug via
+  // a second, independent path. Depending on `frameDims?.w`/`frameDims?.h`
+  // directly means an unstable `frameDims` reference with the same numbers
+  // no longer changes this memo's result identity.
+  //
+  // 05-REVIEW.md CR-01 (round 3): the SAME fix, applied to `surfaceBox` too.
+  // `surfaceBox` is this hook's own INTERNAL state, reconstructed from
+  // scratch (`setSurfaceBox({ w, h })`, a brand-new object) on every
+  // `onLayout` call above — including RN's well-documented redundant
+  // refires with identical width/height (an initial-mount pass followed by
+  // a second measurement pass, safe-area/keyboard recalculation, an
+  // ancestor re-layout, a rotation that settles back to the same box).
+  // Depending on `surfaceBox` BY REFERENCE meant every such refire produced
+  // a brand-new `ContentRect` object even when the numbers never changed,
+  // reopening the identical churn one layer deeper — and unlike the
+  // `frameDims` case, this path is entirely internal, so no amount of
+  // caller-side memoization could ever work around it. Keying on
+  // `surfaceBox?.w`/`surfaceBox?.h` closes it the same way.
   const rect = useMemo((): ContentRect | null => {
     if (!frameDims || !surfaceBox) return null;
     const repaired = repairAspect(surfaceBox, frameDims);
     return contentRect(repaired.w, repaired.h, surfaceBox.w, surfaceBox.h, 'contain');
-  }, [frameDims?.w, frameDims?.h, surfaceBox]);
+  }, [frameDims?.w, frameDims?.h, surfaceBox?.w, surfaceBox?.h]);
 
   return { contentRect: rect, onLayout };
 }
