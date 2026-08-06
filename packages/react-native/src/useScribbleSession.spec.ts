@@ -381,6 +381,100 @@ describe('useScribbleSession — host callback timing (D-04)', () => {
   });
 });
 
+describe('useScribbleSession — onRemoteStrokeStart/onRemoteTap are read via ref, not a stale closure (05-REVIEW.md WR-01)', () => {
+  it("a later render's new onRemoteStrokeStart identity is picked up on the next remote Start, even though the invoking effect never re-ran", async () => {
+    AppState.currentState = 'active';
+    const transport = createTestTransport('me');
+    const calls: string[] = [];
+
+    // Simulates a host's idiomatic inline callback that closes over its own
+    // changing render-scope state (`props.tag` here stands in for e.g. a
+    // `currentCallId`) — a brand-new function identity every render.
+    const { rerender } = await renderHook(
+      (props: { tag: string }) =>
+        useScribbleSession({
+          transport,
+          onRemoteStrokeStart: (from: string) => calls.push(`${props.tag}:${from}`),
+        }),
+      { initialProps: { tag: 'first' } },
+    );
+
+    // The effect that actually invokes onRemoteStrokeStart only re-runs on
+    // [conference, injectedTransport] changes — `transport`'s identity is
+    // unchanged across this rerender, so pre-fix this new callback would
+    // never have been picked up; the OLD ('first') closure would fire
+    // forever instead.
+    await rerender({ tag: 'second' });
+
+    const startPayload = encode({
+      v: PROTOCOL_VERSION,
+      t: MSG_START,
+      from: 'alice',
+      id: 'stroke-1',
+      p: [0, 0],
+      frame: { w: 100, h: 100 },
+    });
+
+    await act(() => {
+      (
+        transport as unknown as {
+          deliver: (from: string, payload: unknown) => void;
+        }
+      ).deliver('alice', startPayload);
+    });
+
+    expect(calls).toEqual(['second:alice']); // NOT 'first:alice'
+  });
+
+  it("the same holds for onRemoteTap", async () => {
+    AppState.currentState = 'active';
+    const transport = createTestTransport('me');
+    const calls: string[] = [];
+
+    const { rerender } = await renderHook(
+      (props: { tag: string }) =>
+        useScribbleSession({
+          transport,
+          onRemoteTap: (from: string) => calls.push(`${props.tag}:${from}`),
+        }),
+      { initialProps: { tag: 'first' } },
+    );
+
+    await rerender({ tag: 'second' });
+
+    const startPayload = encode({
+      v: PROTOCOL_VERSION,
+      t: MSG_START,
+      from: 'alice',
+      id: 'stroke-1',
+      p: [0, 0],
+      frame: { w: 100, h: 100 },
+    });
+    const endPayload = encode({
+      v: PROTOCOL_VERSION,
+      t: MSG_END,
+      from: 'alice',
+      id: 'stroke-1',
+      kind: 'tap',
+    });
+
+    await act(() => {
+      (
+        transport as unknown as {
+          deliver: (from: string, payload: unknown) => void;
+        }
+      ).deliver('alice', startPayload);
+      (
+        transport as unknown as {
+          deliver: (from: string, payload: unknown) => void;
+        }
+      ).deliver('alice', endPayload);
+    });
+
+    expect(calls).toEqual(['second:alice']); // NOT 'first:alice'
+  });
+});
+
 describe('useScribbleSession — inbound presence spoofing resistance (T-05-05)', () => {
   it("a Presence frame whose own payload 'from' field is forged to a different id than the transport's own from argument still updates presence state keyed by the transport-supplied from, never the payload's own from field", async () => {
     AppState.currentState = 'active';
