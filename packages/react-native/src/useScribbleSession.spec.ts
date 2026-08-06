@@ -88,6 +88,35 @@ describe('useScribbleSession — Presence frames are NOT exempt from the rate li
   });
 });
 
+describe('useScribbleSession — malformed/undecodable payloads are NOT exempt from the rate limiter (05-REVIEW.md CR-01)', () => {
+  it('sending RATE_CAPACITY + 1 undecodable (non-JSON garbage) payloads from one sender in rapid succession triggers the per-sender rate-limit warning, proving apply() — and therefore checkRateLimit — runs even when this listener\'s own decode() would fail', async () => {
+    AppState.currentState = 'active';
+    const transport = createTestTransport('me');
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await renderHook(() => useScribbleSession({ transport }));
+
+    await act(() => {
+      for (let i = 0; i < RATE_CAPACITY + 1; i++) {
+        // Not a valid encoded frame at all — the cheapest flood a hostile
+        // sender could mount, and the exact traffic shape CR-01 identified
+        // as bypassing the rate limiter under the pre-fix code (an early
+        // `return` on decode failure, before store.apply() was ever
+        // reached).
+        (transport as unknown as { deliver: (from: string, payload: unknown) => void }).deliver(
+          'garbage-flooder',
+          `not valid json ${i}`,
+        );
+      }
+    });
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('garbage-flooder'));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('exceeded rate limit'));
+
+    warnSpy.mockRestore();
+  });
+});
+
 describe('useScribbleSession — host callback timing (D-04)', () => {
   it('onRemoteStrokeStart fires once at Start; onRemoteTap fires once, additionally, when that stroke later ends with kind:tap', async () => {
     AppState.currentState = 'active';

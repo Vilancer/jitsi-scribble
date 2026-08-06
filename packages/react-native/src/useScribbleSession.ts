@@ -12,16 +12,24 @@
 // methods, not session-signal methods).
 //
 // T-05-03 (RESEARCH.md Security Domain, closed by this file): store.apply()
-// is called UNCONDITIONALLY for every decoded frame, Presence included —
-// never gated behind the `t === MSG_PRESENCE` branch. This is a deliberate
-// deviation from RESEARCH.md Pattern 7's own sketch (which calls apply()
-// only for non-Presence frames): apply()'s internal checkRateLimit(from)
-// call runs before its type-switch, so calling apply() unconditionally is
-// what makes the per-sender token bucket debit uniformly across every frame
-// type, closing the Presence-frame-flooding-bypasses-rate-limit gap. Accept
-// the one redundant decode() call per Presence message this causes —
-// negligible given Presence's low natural frequency, and strictly safer
-// than hand-rolling a second, lighter validator outside protocol/codec.
+// is called UNCONDITIONALLY for every INBOUND PAYLOAD — not merely every
+// decoded frame — and it is called FIRST, before this listener's own
+// decode(). This is a deliberate deviation from RESEARCH.md Pattern 7's own
+// sketch (which calls apply() only for non-Presence frames): apply()'s
+// internal checkRateLimit(from) call runs before its type-switch and before
+// its own internal decode(), so calling apply() first and unconditionally
+// (regardless of whether payload is well-formed) is what makes the
+// per-sender token bucket debit uniformly across every frame type AND every
+// malformed/undecodable payload, closing both the Presence-frame-flooding
+// bypass and the malformed-payload rate-limit bypass (05-REVIEW.md CR-01).
+// This listener's own decode() below runs solely for Presence-branch
+// payload inspection (apply() does not expose its decoded frame back to
+// its caller); note this means every message type still pays for one
+// redundant decode() call (apply()'s internal one, plus this listener's),
+// not just Presence as an earlier version of this comment claimed
+// (05-REVIEW.md WR-03) — accepted as a known, documented cost rather than
+// widening protocol/core's public apply() signature to accept a
+// pre-decoded frame.
 //
 // T-05-05 (closed by this file): presence tracking keys EXCLUSIVELY off the
 // `from` argument transport.subscribe()'s callback supplies (itself sourced
@@ -169,6 +177,17 @@ export function useScribbleSession(options: UseScribbleSessionOptions): UseScrib
     const unsubscribeOutbound = store.onOutbound((frame) => transport.send(frame));
 
     const unsubscribeTransport = transport.subscribe((from, payload) => {
+      // T-05-03 (CR-01 fix, 05-REVIEW.md): call apply() FIRST and
+      // unconditionally, before this listener's own decode() below, so
+      // checkRateLimit(from) — which runs as apply()'s very first statement,
+      // ahead of its own internal decode() — debits the per-sender token
+      // bucket for EVERY inbound payload, decodable or not. The original
+      // code decoded here first and returned early on decode failure, which
+      // meant malformed/undecodable payloads never reached apply() at all
+      // and were never rate-limited — the cheapest possible flood a hostile
+      // sender could mount. See this file's header comment above.
+      store.apply(payload, from);
+
       const result = decode(payload);
       if (!result.ok) return;
 
@@ -186,9 +205,6 @@ export function useScribbleSession(options: UseScribbleSessionOptions): UseScrib
           return next;
         });
       }
-
-      // T-05-03: unconditional — see this file's header comment.
-      store.apply(payload, from);
     });
 
     // mount.ts's own destroyed-flag reentrancy guard (WR-02's fix,
