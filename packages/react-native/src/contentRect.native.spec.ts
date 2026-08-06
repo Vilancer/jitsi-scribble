@@ -58,3 +58,54 @@ describe('useContentRect (GEO-03/GEO-04)', () => {
     expect(result.current.contentRect).toEqual(repaired);
   });
 });
+
+describe('useContentRect — repeated onLayout calls with identical width/height do NOT churn contentRect identity (05-REVIEW.md CR-01, round 3)', () => {
+  it('calling onLayout twice with the same width/height returns the SAME contentRect object reference on the second call', async () => {
+    const frameDims = { w: 1920, h: 1080 };
+    const surfaceBox = { w: 1600, h: 900 };
+
+    const { result } = await renderHook(() => useContentRect(frameDims));
+
+    await act(() => {
+      result.current.onLayout(layoutEvent(surfaceBox.w, surfaceBox.h));
+    });
+    const contentRectAfterFirstLayout = result.current.contentRect;
+    expect(contentRectAfterFirstLayout).not.toBeNull();
+
+    // RN is well known to refire onLayout with IDENTICAL width/height (an
+    // initial mount pass followed by a second measurement pass,
+    // safe-area/keyboard recalculation, an ancestor re-layout, an
+    // orientation-change-and-back that settles back to the same absolute
+    // box). Each such refire calls `setSurfaceBox({ w, h })` with a
+    // brand-new object carrying the SAME numbers as before.
+    await act(() => {
+      result.current.onLayout(layoutEvent(surfaceBox.w, surfaceBox.h));
+    });
+
+    // Pre-fix, the `rect` memo was keyed on `surfaceBox` BY REFERENCE, so
+    // this second, value-identical onLayout call produced a brand-new
+    // ContentRect object even though nothing had actually changed —
+    // cascading into useScribbleSession.ts's `appendLocal` and, from there,
+    // into ScribbleOverlay.tsx's `onLocalBegin`/`onLocalSample` and
+    // gesture.ts's memoized `Gesture.Pan()`.
+    expect(result.current.contentRect).toBe(contentRectAfterFirstLayout);
+  });
+
+  it('calling onLayout with genuinely different width/height still produces a new contentRect (the legitimate case the fix above must not break)', async () => {
+    const frameDims = { w: 1920, h: 1080 };
+
+    const { result } = await renderHook(() => useContentRect(frameDims));
+
+    await act(() => {
+      result.current.onLayout(layoutEvent(1600, 900));
+    });
+    const contentRectBefore = result.current.contentRect;
+    expect(contentRectBefore).not.toBeNull();
+
+    await act(() => {
+      result.current.onLayout(layoutEvent(800, 450)); // a real resize
+    });
+
+    expect(result.current.contentRect).not.toBe(contentRectBefore);
+  });
+});
