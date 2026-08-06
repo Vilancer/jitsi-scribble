@@ -23,13 +23,34 @@
 // file (not the shipped mock) if a future plan's spec needs another
 // Reanimated export mocked.
 
+const React = require('react');
+const { useRef } = React;
+
 function useSharedValue(initial) {
   // A real SharedValue is a UI-thread object; under Jest there is no UI
   // thread, so a plain mutable `{ value }` box is a faithful-enough stand-in
   // for every test in this package (none of which assert cross-thread
   // behavior — that is explicitly a human-verification item, not a unit
   // test, per this plan's own must_haves).
-  return { value: initial };
+  //
+  // 05-REVIEW.md CR-03/WR-02 fix: the real `useSharedValue` returns the SAME
+  // object across every re-render of the calling component (its whole point
+  // is being a stable, UI-thread-owned box a worklet can close over once and
+  // keep mutating forever) — this mock previously returned a brand-new box
+  // on every call, which is harmless for a hook exercised exactly once
+  // (gesture.spec.ts's direct calls) but silently breaks any test that
+  // re-renders a component using this hook more than once (e.g.
+  // `ScribbleOverlay`'s per-touch-sample re-renders): a `useMemo`'d worklet
+  // created on an early render would keep writing to THAT render's box,
+  // while a later render's return value would be reading a different,
+  // never-written-to box. `useRef` (from 'react', not this mock) is exactly
+  // the primitive that already has the "stable across re-renders of this
+  // component instance, created once" contract this needs.
+  const ref = useRef(undefined);
+  if (ref.current === undefined) {
+    ref.current = { value: initial };
+  }
+  return ref.current;
 }
 
 function runOnJS(fn) {
@@ -51,9 +72,29 @@ function useReducedMotion() {
 /** Plan 05-04's addition: under Jest there is no native view registry to
  * wrap, so the "animated" component is just the underlying component itself
  * — matching the real package's documented mock intent (no animation, still
- * a valid renderable component). */
+ * a valid renderable component).
+ *
+ * 05-REVIEW.md CR-03 follow-up: on-device, Reanimated's real
+ * `createAnimatedComponent` HOC reads the `animatedProps` prop and merges
+ * its returned object directly onto the underlying native view via its own
+ * UI-thread props pathway, bypassing React's commit phase entirely — so a
+ * consumer never needs (and cannot) read those merged values back off a
+ * plain `.props` object in test code. Under Jest there is no native view to
+ * bypass to, and this package's specs DO need to assert on the final
+ * merged value (e.g. that `d` reflects `pathString.value`, not a stale
+ * literal prop) — so this mock spreads `animatedProps`'s own object onto the
+ * wrapped component's OTHER props, with animatedProps winning on conflict
+ * (mirroring "the animated value always wins," the on-device behavior for
+ * any prop present in both). This is the one place this mock's behavior is
+ * observably different from a literal identity function — everywhere else
+ * (untouched by animatedProps) it renders identically to the wrapped
+ * component. */
 function createAnimatedComponent(Component) {
-  return Component;
+  function AnimatedComponentMock(props) {
+    const { animatedProps, ...rest } = props;
+    return React.createElement(Component, { ...rest, ...animatedProps });
+  }
+  return AnimatedComponentMock;
 }
 
 /** Plan 05-04's addition: no real animation clock exists under Jest, so

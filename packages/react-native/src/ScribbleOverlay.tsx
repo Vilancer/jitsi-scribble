@@ -16,17 +16,31 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LayoutChangeEvent } from 'react-native';
 import { StyleSheet, View } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
-import { createAnimatedComponent, useAnimatedProps, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
+import {
+  createAnimatedComponent,
+  useAnimatedProps,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { Circle, G, Path, Svg } from 'react-native-svg';
 
 import type { Stroke } from '@vilancer/protocol/core';
 import { LOCAL_SENDER } from '@vilancer/protocol/core';
 import type { ContentRect } from '@vilancer/protocol/geometry';
 import { computeStrokeWidth, denormalize } from '@vilancer/protocol/geometry';
-import { CASING_COLOUR, CASING_EXTRA_WIDTH_DP, CORE_WIDTH_DP, colourForParticipant } from '@vilancer/protocol/render';
+import {
+  CASING_COLOUR,
+  CASING_EXTRA_WIDTH_DP,
+  CORE_WIDTH_DP,
+  colourForParticipant,
+} from '@vilancer/protocol/render';
 
 import { useLocalStrokeGesture } from './gesture.js';
-import { useScribbleSession, type UseScribbleSessionOptions } from './useScribbleSession.js';
+import {
+  useScribbleSession,
+  type UseScribbleSessionOptions,
+} from './useScribbleSession.js';
 
 const AnimatedPath = createAnimatedComponent(Path);
 const AnimatedCircle = createAnimatedComponent(Circle);
@@ -77,18 +91,32 @@ function pathDataFor(stroke: Stroke, rect: ContentRect): string {
  * `<AnimatedCircle>` branches (UI-SPEC Resolution 2A) — one call site each,
  * no conditional, both reading the exact same `CORE_WIDTH_DP`/
  * `CASING_EXTRA_WIDTH_DP` pair already locked for strokes. */
-function casingCoreWidths(contentRect: ContentRect, surfaceBox: { w: number; h: number }): { coreWidth: number; casingWidth: number } {
+function casingCoreWidths(
+  contentRect: ContentRect,
+  surfaceBox: { w: number; h: number },
+): { coreWidth: number; casingWidth: number } {
   return {
     coreWidth: computeStrokeWidth(CORE_WIDTH_DP, contentRect, surfaceBox),
-    casingWidth: computeStrokeWidth(CORE_WIDTH_DP + CASING_EXTRA_WIDTH_DP, contentRect, surfaceBox),
+    casingWidth: computeStrokeWidth(
+      CORE_WIDTH_DP + CASING_EXTRA_WIDTH_DP,
+      contentRect,
+      surfaceBox,
+    ),
   };
 }
 
 /** UI-SPEC Resolution 1's exact formula: `stroke.alpha * (isLocal &&
  * !remotePresence ? PRESENCE_UNAWARE_OPACITY_CAP : 1.0)`. Applied to both
  * freehand strokes and tap-rings alike — never to a remote stroke. */
-function renderedOpacity(stroke: Stroke, isLocal: boolean, remotePresence: boolean): number {
-  return stroke.alpha * (isLocal && !remotePresence ? PRESENCE_UNAWARE_OPACITY_CAP : 1);
+function renderedOpacity(
+  stroke: Stroke,
+  isLocal: boolean,
+  remotePresence: boolean,
+): number {
+  return (
+    stroke.alpha *
+    (isLocal && !remotePresence ? PRESENCE_UNAWARE_OPACITY_CAP : 1)
+  );
 }
 
 interface StrokeVisualProps {
@@ -99,12 +127,105 @@ interface StrokeVisualProps {
   remotePresence: boolean;
 }
 
+interface LocalActiveStrokePathProps {
+  /** `gesture.ts`'s own UI-thread `SharedValue<string>`, read directly here
+   * — never `stroke.points`/`pathDataFor()`. */
+  pathString: { value: string };
+  contentRect: ContentRect;
+  surfaceBox: { w: number; h: number };
+  stroke: Stroke;
+  remotePresence: boolean;
+}
+
+/**
+ * 05-REVIEW.md CR-03's fix: renders the actively-dragging LOCAL stroke's `d`
+ * by reading `gesture.ts`'s `pathString` SharedValue directly through
+ * `useAnimatedProps`, instead of `pathDataFor(stroke, contentRect)` rebuilding
+ * the whole string from `stroke.points` on every store notification — the
+ * exact "full path-string rebuild... per touch sample" DRAW-08 forbids and
+ * `gesture.ts`'s own UI-thread work exists to avoid. Mounted ONLY while
+ * `ScribbleOverlay`'s own `activeLocalId` matches this stroke's id (i.e. only
+ * for the one local stroke currently being dragged, never for remote strokes
+ * and never once this same stroke has ended); `StrokeVisual`/`StrokePath`
+ * take back over the instant the drag ends and `kind` resolves (Pattern 5).
+ *
+ * `pathString`'s coordinates are already in this overlay's own root-View
+ * pixel space (`gesture.ts`'s `onBegin`/`onUpdate` write `e.x`/`e.y`
+ * directly, with no normalize/denormalize round-trip) — the same pixel space
+ * `denormalize(u, v, contentRect)` produces for every other stroke, since
+ * `contentRect` (`contentRect.native.ts`) is itself measured from this same
+ * root View's `onLayout`. No coordinate transform is needed here.
+ *
+ * `coreWidth`/`casingWidth`/colour/opacity are NOT worth chasing onto the UI
+ * thread too (05-REVIEW.md's own review confirms this): they never change
+ * per touch sample (only per stroke, or on the store's own tick()-driven fade
+ * — Pattern 4), so reading them as plain JS values here, recomputed on
+ * whatever cadence `ScribbleOverlay` re-renders at, is correct and matches
+ * every other stroke's own width/colour computation. `renderedOpacity`'s
+ * UI-SPEC Resolution 1 formula still applies unchanged (this stroke's own
+ * `alpha` is always `1` while actively dragging — the store's tick()-driven
+ * fade cannot have started; `fadeStartedAt` is only set at `endLocal` — but
+ * the local-author presence-unaware dimming cap does still apply during an
+ * active drag, so it is computed here exactly like every other local
+ * stroke's, never skipped).
+ */
+function LocalActiveStrokePath({
+  pathString,
+  contentRect,
+  surfaceBox,
+  stroke,
+  remotePresence,
+}: LocalActiveStrokePathProps) {
+  const colour = colourForParticipant(stroke.from);
+  const { coreWidth, casingWidth } = casingCoreWidths(contentRect, surfaceBox);
+  const opacity = renderedOpacity(stroke, true, remotePresence);
+
+  const casingAnimatedProps = useAnimatedProps(() => ({
+    d: pathString.value,
+    opacity,
+  }));
+  const coreAnimatedProps = useAnimatedProps(() => ({
+    d: pathString.value,
+    opacity,
+  }));
+
+  const testIdBase = `scribble-stroke-${stroke.from}-${stroke.id}`;
+  return (
+    <G testID={testIdBase}>
+      <AnimatedPath
+        testID={`${testIdBase}-casing`}
+        stroke={CASING_COLOUR}
+        strokeWidth={casingWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+        animatedProps={casingAnimatedProps}
+      />
+      <AnimatedPath
+        testID={`${testIdBase}-core`}
+        stroke={colour}
+        strokeWidth={coreWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+        animatedProps={coreAnimatedProps}
+      />
+    </G>
+  );
+}
+
 /**
  * Two `<AnimatedPath>`s with the same `d` — casing (CASING_COLOUR) behind,
  * `colourForParticipant()`'s core on top — mirroring
  * `packages/web/src/render.ts`'s `svgPath()` two-call pattern (DRAW-07).
  */
-function StrokePath({ stroke, contentRect, surfaceBox, isLocal, remotePresence }: StrokeVisualProps) {
+function StrokePath({
+  stroke,
+  contentRect,
+  surfaceBox,
+  isLocal,
+  remotePresence,
+}: StrokeVisualProps) {
   const colour = colourForParticipant(stroke.from);
   const { coreWidth, casingWidth } = casingCoreWidths(contentRect, surfaceBox);
   const d = pathDataFor(stroke, contentRect);
@@ -152,12 +273,21 @@ function StrokePath({ stroke, contentRect, surfaceBox, isLocal, remotePresence }
  * 2B) — the hold/fade that follows reads `stroke.alpha` exactly like a
  * normal stroke, unaffected either way.
  */
-function TapRing({ stroke, contentRect, surfaceBox, isLocal, remotePresence }: StrokeVisualProps) {
+function TapRing({
+  stroke,
+  contentRect,
+  surfaceBox,
+  isLocal,
+  remotePresence,
+}: StrokeVisualProps) {
   const colour = colourForParticipant(stroke.from);
   const { coreWidth, casingWidth } = casingCoreWidths(contentRect, surfaceBox);
   const [u, v] = stroke.points[0];
   const { x: cx, y: cy } = denormalize(u, v, contentRect);
-  const fitRatio = Math.min(contentRect.w / surfaceBox.w, contentRect.h / surfaceBox.h);
+  const fitRatio = Math.min(
+    contentRect.w / surfaceBox.w,
+    contentRect.h / surfaceBox.h,
+  );
   const targetRadius = TAP_RING_TARGET_RADIUS_DP * fitRatio;
   const opacity = renderedOpacity(stroke, isLocal, remotePresence);
 
@@ -179,8 +309,14 @@ function TapRing({ stroke, contentRect, surfaceBox, isLocal, remotePresence }: S
     // suppression comment is needed or valid.
   }, []);
 
-  const casingAnimatedProps = useAnimatedProps(() => ({ r: radius.value, opacity }));
-  const coreAnimatedProps = useAnimatedProps(() => ({ r: radius.value, opacity }));
+  const casingAnimatedProps = useAnimatedProps(() => ({
+    r: radius.value,
+    opacity,
+  }));
+  const coreAnimatedProps = useAnimatedProps(() => ({
+    r: radius.value,
+    opacity,
+  }));
 
   const testIdBase = `scribble-stroke-${stroke.from}-${stroke.id}`;
   return (
@@ -217,7 +353,11 @@ function TapRing({ stroke, contentRect, surfaceBox, isLocal, remotePresence }: S
  */
 function StrokeVisual(props: StrokeVisualProps) {
   if (props.stroke.points.length === 0) return null;
-  return props.stroke.kind === 'tap' ? <TapRing {...props} /> : <StrokePath {...props} />;
+  return props.stroke.kind === 'tap' ? (
+    <TapRing {...props} />
+  ) : (
+    <StrokePath {...props} />
+  );
 }
 
 /**
@@ -233,7 +373,9 @@ export function ScribbleOverlay(props: ScribbleOverlayProps) {
   const { drawModeEnabled, receiveAnnotations, ...sessionOptions } = props;
   const session = useScribbleSession(sessionOptions);
 
-  const [strokes, setStrokes] = useState<readonly Stroke[]>(() => session.getStrokesSnapshot());
+  const [strokes, setStrokes] = useState<readonly Stroke[]>(() =>
+    session.getStrokesSnapshot(),
+  );
   useEffect(() => {
     setStrokes(session.getStrokesSnapshot());
     return session.subscribeStrokes(setStrokes);
@@ -243,7 +385,9 @@ export function ScribbleOverlay(props: ScribbleOverlayProps) {
   // fitted content rect — useContentRect (inside useScribbleSession) keeps
   // that measurement internal, so this component tracks its own copy from
   // the same onLayout event it must forward to session.onLayout anyway.
-  const [surfaceBox, setSurfaceBox] = useState<{ w: number; h: number } | null>(null);
+  const [surfaceBox, setSurfaceBox] = useState<{ w: number; h: number } | null>(
+    null,
+  );
   const handleLayout = useCallback(
     (event: LayoutChangeEvent): void => {
       const { width, height } = event.nativeEvent.layout;
@@ -260,10 +404,22 @@ export function ScribbleOverlay(props: ScribbleOverlayProps) {
   const strokeCounterRef = useRef(0);
   const currentLocalIdRef = useRef<string | null>(null);
 
+  // 05-REVIEW.md CR-03: which local stroke (if any) is currently being
+  // actively dragged — `null` once a drag ends. Set/cleared exactly once per
+  // GESTURE (onLocalBegin/onLocalEnd), never per touch sample, so this is a
+  // per-stroke React state update (ARCHITECTURE.md §5 rule 3's own accepted
+  // cadence — "React re-renders only when a stroke is added or removed"),
+  // not the per-sample one DRAW-08 forbids. While it matches a stroke's id,
+  // that stroke renders via `LocalActiveStrokePath` (reading `pathString`
+  // straight off the UI thread) instead of `StrokeVisual`/`pathDataFor`'s
+  // array-rebuild path.
+  const [activeLocalId, setActiveLocalId] = useState<string | null>(null);
+
   const onLocalBegin = useCallback(
     (x: number, y: number): void => {
       const id = `local-${strokeCounterRef.current++}`;
       currentLocalIdRef.current = id;
+      setActiveLocalId(id);
       session.beginLocal(id);
       session.appendLocal(id, x, y);
     },
@@ -283,11 +439,21 @@ export function ScribbleOverlay(props: ScribbleOverlayProps) {
       const id = currentLocalIdRef.current;
       if (id !== null) session.endLocal(id, kind);
       currentLocalIdRef.current = null;
+      // Batched by React together with the setState store.endLocal's own
+      // notify() triggers (both called synchronously, in this same handler)
+      // — so the render that clears activeLocalId is the SAME render that
+      // first observes this stroke's resolved `kind`/hold-phase, never a
+      // render in between where neither is true yet.
+      setActiveLocalId(null);
     },
     [session.endLocal],
   );
 
-  const { pan } = useLocalStrokeGesture({ onLocalBegin, onLocalSample, onLocalEnd });
+  const { pan, pathString } = useLocalStrokeGesture({
+    onLocalBegin,
+    onLocalSample,
+    onLocalEnd,
+  });
 
   const { contentRect, remotePresence } = session;
 
@@ -310,6 +476,26 @@ export function ScribbleOverlay(props: ScribbleOverlayProps) {
             // useScribbleSession keeps calling store.apply() on every
             // inbound frame regardless of receiveAnnotations.
             if (!isLocal && !receiveAnnotations) return null;
+
+            // 05-REVIEW.md CR-03: the one local stroke actively being
+            // dragged renders its `d` from gesture.ts's own UI-thread
+            // `pathString`, never from `stroke.points`/`pathDataFor` — see
+            // `LocalActiveStrokePath`'s own header comment. Every other
+            // stroke (remote, or this same stroke once the drag has ended)
+            // keeps rendering through the existing store-driven dispatch.
+            if (isLocal && stroke.id === activeLocalId) {
+              return (
+                <LocalActiveStrokePath
+                  key={`${stroke.from} ${stroke.id}`}
+                  pathString={pathString}
+                  contentRect={contentRect}
+                  surfaceBox={surfaceBox}
+                  stroke={stroke}
+                  remotePresence={remotePresence}
+                />
+              );
+            }
+
             return (
               <StrokeVisual
                 key={`${stroke.from} ${stroke.id}`}
@@ -324,7 +510,10 @@ export function ScribbleOverlay(props: ScribbleOverlayProps) {
       </Svg>
       {drawModeEnabled && (
         <GestureDetector gesture={pan}>
-          <View testID="scribble-gesture-catcher" style={StyleSheet.absoluteFillObject} />
+          <View
+            testID="scribble-gesture-catcher"
+            style={StyleSheet.absoluteFillObject}
+          />
         </GestureDetector>
       )}
     </View>
