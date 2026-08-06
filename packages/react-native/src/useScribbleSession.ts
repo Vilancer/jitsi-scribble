@@ -32,10 +32,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 
 import { decode } from '@vilancer/protocol/codec';
-import { LOCAL_SENDER, StrokeStore, type FrameDims, type Stroke } from '@vilancer/protocol/core';
+import {
+  LOCAL_SENDER,
+  MSG_PRESENCE,
+  PROTOCOL_VERSION,
+  StrokeStore,
+  type FrameDims,
+  type Stroke,
+} from '@vilancer/protocol/core';
 import { normalize } from '@vilancer/protocol/geometry';
 import type { ScribbleTransport } from '@vilancer/protocol/transport';
-import { MSG_PRESENCE, PROTOCOL_VERSION } from '@vilancer/protocol/wire-constants';
 
 import { useContentRect, type UseContentRectResult } from './contentRect.native.js';
 import { fromJitsiConference, type FromJitsiConferenceOptions } from './fromJitsiConference.js';

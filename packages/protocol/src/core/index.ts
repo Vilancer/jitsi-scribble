@@ -34,6 +34,15 @@ import {
   QUANT_STEPS,
 } from '../wire-constants.js';
 
+// Re-exported (not just imported) so a consumer that needs to hand-construct
+// a WireFrame — e.g. useScribbleSession.ts's Presence frame, which is
+// deliberately built by hand rather than via effect/Schema's
+// PresenceFrameSchema, per PKG-04 — can reach PROTOCOL_VERSION/MSG_PRESENCE
+// through this already-RN-safe subpath instead of needing a new one. Keeps
+// this plan's new files importing only the already-enumerated
+// /core, /geometry, /render, /transport, /codec subpaths.
+export { MSG_CLEAR, MSG_END, MSG_MOVE, MSG_PRESENCE, MSG_START, PROTOCOL_VERSION };
+
 /** A stroke holds at full opacity for this long (ms) after its effective end
  * time, before it starts fading (CORE-02). Half-open interval: at
  * `elapsed === HOLD_MS` exactly, the stroke has already moved into the
