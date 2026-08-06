@@ -2,8 +2,17 @@ import { act, renderHook } from '@testing-library/react-native';
 import { AppState } from 'react-native';
 
 import { encode } from '@vilancer/protocol/codec';
-import { MSG_END, MSG_PRESENCE, MSG_START, PROTOCOL_VERSION, RATE_CAPACITY } from '@vilancer/protocol/core';
-import type { ScribbleTransport, TransportState } from '@vilancer/protocol/transport';
+import {
+  MSG_END,
+  MSG_PRESENCE,
+  MSG_START,
+  PROTOCOL_VERSION,
+  RATE_CAPACITY,
+} from '@vilancer/protocol/core';
+import type {
+  ScribbleTransport,
+  TransportState,
+} from '@vilancer/protocol/transport';
 
 import { useScribbleSession } from './useScribbleSession.js';
 
@@ -13,7 +22,9 @@ import { useScribbleSession } from './useScribbleSession.js';
  * constructor signature does not match what fromJitsiConference expects
  * (this task's own documented mocking-seam discretion).
  */
-function createTestTransport(localId: string): ScribbleTransport & { deliver: (from: string, payload: unknown) => void } {
+function createTestTransport(
+  localId: string,
+): ScribbleTransport & { deliver: (from: string, payload: unknown) => void } {
   const subscribers = new Set<(from: string, payload: unknown) => void>();
   const sent: unknown[] = [];
   return {
@@ -37,7 +48,10 @@ function createTestTransport(localId: string): ScribbleTransport & { deliver: (f
     get sentPayloads() {
       return sent;
     },
-  } as ScribbleTransport & { deliver: (from: string, payload: unknown) => void; sentPayloads: unknown[] };
+  } as ScribbleTransport & {
+    deliver: (from: string, payload: unknown) => void;
+    sentPayloads: unknown[];
+  };
 }
 
 describe('useScribbleSession — presence outbound (D-02/D-03)', () => {
@@ -49,7 +63,12 @@ describe('useScribbleSession — presence outbound (D-02/D-03)', () => {
     await renderHook(() => useScribbleSession({ transport }));
 
     expect(sendSpy).toHaveBeenCalledTimes(1);
-    expect(sendSpy).toHaveBeenCalledWith({ v: PROTOCOL_VERSION, t: MSG_PRESENCE, from: 'me', vis: true });
+    expect(sendSpy).toHaveBeenCalledWith({
+      v: PROTOCOL_VERSION,
+      t: MSG_PRESENCE,
+      from: 'me',
+      vis: true,
+    });
   });
 
   it('a backgrounded initial AppState sends vis:false', async () => {
@@ -59,7 +78,12 @@ describe('useScribbleSession — presence outbound (D-02/D-03)', () => {
 
     await renderHook(() => useScribbleSession({ transport }));
 
-    expect(sendSpy).toHaveBeenCalledWith({ v: PROTOCOL_VERSION, t: MSG_PRESENCE, from: 'me', vis: false });
+    expect(sendSpy).toHaveBeenCalledWith({
+      v: PROTOCOL_VERSION,
+      t: MSG_PRESENCE,
+      from: 'me',
+      vis: false,
+    });
   });
 });
 
@@ -69,17 +93,30 @@ describe('useScribbleSession — Presence frames are NOT exempt from the rate li
     const transport = createTestTransport('me');
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
-    const { result } = await renderHook(() => useScribbleSession({ transport }));
+    const { result } = await renderHook(() =>
+      useScribbleSession({ transport }),
+    );
 
     await act(() => {
       for (let i = 0; i < RATE_CAPACITY + 1; i++) {
-        const payload = encode({ v: PROTOCOL_VERSION, t: MSG_PRESENCE, from: 'flooder', vis: i % 2 === 0 });
-        (transport as unknown as { deliver: (from: string, payload: unknown) => void }).deliver('flooder', payload);
+        const payload = encode({
+          v: PROTOCOL_VERSION,
+          t: MSG_PRESENCE,
+          from: 'flooder',
+          vis: i % 2 === 0,
+        });
+        (
+          transport as unknown as {
+            deliver: (from: string, payload: unknown) => void;
+          }
+        ).deliver('flooder', payload);
       }
     });
 
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('flooder'));
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('exceeded rate limit'));
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('exceeded rate limit'),
+    );
     // Proves apply() (and therefore checkRateLimit) actually ran for these
     // Presence-tagged payloads, not just that some other code path warned.
     expect(result.current.remotePresenceBySender.get('flooder')).toBeDefined();
@@ -88,8 +125,84 @@ describe('useScribbleSession — Presence frames are NOT exempt from the rate li
   });
 });
 
+describe('useScribbleSession — an unmemoized transportOptions object does NOT tear down/rebuild the session on re-render (05-REVIEW.md CR-02)', () => {
+  it('re-rendering with a brand-new transportOptions object literal (same transport) does not re-send the initial Presence frame or reset the store', async () => {
+    AppState.currentState = 'active';
+    const transport = createTestTransport('me');
+    const sendSpy = jest.spyOn(transport, 'send');
+
+    const { result, rerender } = await renderHook(
+      (props: { transportOptions: Record<string, never> }) =>
+        useScribbleSession({
+          transport,
+          frameDims: { w: 100, h: 100 },
+          transportOptions: props.transportOptions,
+        }),
+      { initialProps: { transportOptions: {} } },
+    );
+
+    expect(sendSpy).toHaveBeenCalledTimes(1); // exactly one initial Presence send
+
+    await act(() => {
+      result.current.beginLocal('local-stroke-1');
+      result.current.appendLocal('local-stroke-1', 10, 10);
+    });
+
+    expect(result.current.getStrokesSnapshot()).toHaveLength(1);
+
+    // A BRAND-NEW object literal every time — exactly what a host passing
+    // `transportOptions={{ ... }}` inline in JSX produces on every one of
+    // ITS OWN re-renders, with no memoization. Pre-CR-02-fix, this identity
+    // change alone tore down and rebuilt the entire session.
+    await rerender({ transportOptions: {} });
+    await rerender({ transportOptions: {} });
+
+    // No second Presence send — the session was never torn down/rebuilt.
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    // The stroke begun before the re-renders is still there — a rebuilt
+    // session would have constructed a brand-new, empty StrokeStore.
+    expect(result.current.getStrokesSnapshot()).toHaveLength(1);
+    expect(result.current.getStrokesSnapshot()[0]?.id).toBe('local-stroke-1');
+  });
+
+  it('swapping to a genuinely different injected transport STILL tears down and rebuilds the session (the legitimate case the fix above must not break)', async () => {
+    AppState.currentState = 'active';
+    const transportA = createTestTransport('me');
+    const transportB = createTestTransport('me');
+    const sendSpyA = jest.spyOn(transportA, 'send');
+    const sendSpyB = jest.spyOn(transportB, 'send');
+
+    const { result, rerender } = await renderHook(
+      (props: { transport: ScribbleTransport }) =>
+        useScribbleSession({
+          transport: props.transport,
+          frameDims: { w: 100, h: 100 },
+        }),
+      { initialProps: { transport: transportA } },
+    );
+
+    expect(sendSpyA).toHaveBeenCalledTimes(1);
+
+    await act(() => {
+      result.current.beginLocal('stroke-on-a');
+    });
+    expect(result.current.getStrokesSnapshot()).toHaveLength(1);
+
+    // A REAL identity change — the "host swapped to a different
+    // conference/transport" case CR-02's fix must keep working.
+    await rerender({ transport: transportB });
+
+    // The new transport announces its own initial Presence — proof a fresh
+    // session was actually constructed over it.
+    expect(sendSpyB).toHaveBeenCalledTimes(1);
+    // The stroke authored against the OLD session's store is gone — proof
+    // the store itself was rebuilt from scratch, not reused.
+    expect(result.current.getStrokesSnapshot()).toHaveLength(0);
+  });
+});
+
 describe('useScribbleSession — malformed/undecodable payloads are NOT exempt from the rate limiter (05-REVIEW.md CR-01)', () => {
-  it('sending RATE_CAPACITY + 1 undecodable (non-JSON garbage) payloads from one sender in rapid succession triggers the per-sender rate-limit warning, proving apply() — and therefore checkRateLimit — runs even when this listener\'s own decode() would fail', async () => {
+  it("sending RATE_CAPACITY + 1 undecodable (non-JSON garbage) payloads from one sender in rapid succession triggers the per-sender rate-limit warning, proving apply() — and therefore checkRateLimit — runs even when this listener's own decode() would fail", async () => {
     AppState.currentState = 'active';
     const transport = createTestTransport('me');
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
@@ -103,15 +216,20 @@ describe('useScribbleSession — malformed/undecodable payloads are NOT exempt f
         // as bypassing the rate limiter under the pre-fix code (an early
         // `return` on decode failure, before store.apply() was ever
         // reached).
-        (transport as unknown as { deliver: (from: string, payload: unknown) => void }).deliver(
-          'garbage-flooder',
-          `not valid json ${i}`,
-        );
+        (
+          transport as unknown as {
+            deliver: (from: string, payload: unknown) => void;
+          }
+        ).deliver('garbage-flooder', `not valid json ${i}`);
       }
     });
 
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('garbage-flooder'));
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('exceeded rate limit'));
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('garbage-flooder'),
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('exceeded rate limit'),
+    );
 
     warnSpy.mockRestore();
   });
@@ -124,7 +242,9 @@ describe('useScribbleSession — host callback timing (D-04)', () => {
     const onRemoteStrokeStart = jest.fn();
     const onRemoteTap = jest.fn();
 
-    await renderHook(() => useScribbleSession({ transport, onRemoteStrokeStart, onRemoteTap }));
+    await renderHook(() =>
+      useScribbleSession({ transport, onRemoteStrokeStart, onRemoteTap }),
+    );
 
     const startPayload = encode({
       v: PROTOCOL_VERSION,
@@ -136,17 +256,31 @@ describe('useScribbleSession — host callback timing (D-04)', () => {
     });
 
     await act(() => {
-      (transport as unknown as { deliver: (from: string, payload: unknown) => void }).deliver('alice', startPayload);
+      (
+        transport as unknown as {
+          deliver: (from: string, payload: unknown) => void;
+        }
+      ).deliver('alice', startPayload);
     });
 
     expect(onRemoteStrokeStart).toHaveBeenCalledTimes(1);
     expect(onRemoteStrokeStart).toHaveBeenCalledWith('alice');
     expect(onRemoteTap).not.toHaveBeenCalled();
 
-    const endPayload = encode({ v: PROTOCOL_VERSION, t: MSG_END, from: 'alice', id: 'stroke-1', kind: 'tap' });
+    const endPayload = encode({
+      v: PROTOCOL_VERSION,
+      t: MSG_END,
+      from: 'alice',
+      id: 'stroke-1',
+      kind: 'tap',
+    });
 
     await act(() => {
-      (transport as unknown as { deliver: (from: string, payload: unknown) => void }).deliver('alice', endPayload);
+      (
+        transport as unknown as {
+          deliver: (from: string, payload: unknown) => void;
+        }
+      ).deliver('alice', endPayload);
     });
 
     expect(onRemoteStrokeStart).toHaveBeenCalledTimes(1); // still just once — not re-fired at End
@@ -154,14 +288,19 @@ describe('useScribbleSession — host callback timing (D-04)', () => {
     expect(onRemoteTap).toHaveBeenCalledWith('alice');
   });
 
-  it('never fires either callback for the local author\'s own strokes', async () => {
+  it("never fires either callback for the local author's own strokes", async () => {
     AppState.currentState = 'active';
     const transport = createTestTransport('me');
     const onRemoteStrokeStart = jest.fn();
     const onRemoteTap = jest.fn();
 
     const { result } = await renderHook(() =>
-      useScribbleSession({ transport, onRemoteStrokeStart, onRemoteTap, frameDims: { w: 100, h: 100 } }),
+      useScribbleSession({
+        transport,
+        onRemoteStrokeStart,
+        onRemoteTap,
+        frameDims: { w: 100, h: 100 },
+      }),
     );
 
     await act(() => {
@@ -179,14 +318,25 @@ describe('useScribbleSession — inbound presence spoofing resistance (T-05-05)'
     AppState.currentState = 'active';
     const transport = createTestTransport('me');
 
-    const { result } = await renderHook(() => useScribbleSession({ transport }));
+    const { result } = await renderHook(() =>
+      useScribbleSession({ transport }),
+    );
 
     // The transport-supplied `from` argument is 'alice'; the payload's own
     // encoded `from` field is forged to 'mallory'.
-    const forgedPayload = encode({ v: PROTOCOL_VERSION, t: MSG_PRESENCE, from: 'mallory', vis: false });
+    const forgedPayload = encode({
+      v: PROTOCOL_VERSION,
+      t: MSG_PRESENCE,
+      from: 'mallory',
+      vis: false,
+    });
 
     await act(() => {
-      (transport as unknown as { deliver: (from: string, payload: unknown) => void }).deliver('alice', forgedPayload);
+      (
+        transport as unknown as {
+          deliver: (from: string, payload: unknown) => void;
+        }
+      ).deliver('alice', forgedPayload);
     });
 
     // Keyed by the trusted transport argument ('alice'), never by the
@@ -199,14 +349,34 @@ describe('useScribbleSession — inbound presence spoofing resistance (T-05-05)'
     AppState.currentState = 'active';
     const transport = createTestTransport('me');
 
-    const { result } = await renderHook(() => useScribbleSession({ transport }));
+    const { result } = await renderHook(() =>
+      useScribbleSession({ transport }),
+    );
 
-    const alicePayload = encode({ v: PROTOCOL_VERSION, t: MSG_PRESENCE, from: 'alice', vis: true });
-    const bobForgedAsAlice = encode({ v: PROTOCOL_VERSION, t: MSG_PRESENCE, from: 'alice', vis: false });
+    const alicePayload = encode({
+      v: PROTOCOL_VERSION,
+      t: MSG_PRESENCE,
+      from: 'alice',
+      vis: true,
+    });
+    const bobForgedAsAlice = encode({
+      v: PROTOCOL_VERSION,
+      t: MSG_PRESENCE,
+      from: 'alice',
+      vis: false,
+    });
 
     await act(() => {
-      (transport as unknown as { deliver: (from: string, payload: unknown) => void }).deliver('alice', alicePayload);
-      (transport as unknown as { deliver: (from: string, payload: unknown) => void }).deliver('bob', bobForgedAsAlice);
+      (
+        transport as unknown as {
+          deliver: (from: string, payload: unknown) => void;
+        }
+      ).deliver('alice', alicePayload);
+      (
+        transport as unknown as {
+          deliver: (from: string, payload: unknown) => void;
+        }
+      ).deliver('bob', bobForgedAsAlice);
     });
 
     expect(result.current.remotePresenceBySender.get('alice')).toBe(true); // untouched by bob's forged frame

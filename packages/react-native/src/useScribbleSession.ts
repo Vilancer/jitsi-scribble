@@ -51,14 +51,32 @@ import {
 import { normalize } from '@vilancer/protocol/geometry';
 import type { ScribbleTransport } from '@vilancer/protocol/transport';
 
-import { useContentRect, type UseContentRectResult } from './contentRect.native.js';
-import { fromJitsiConference, type FromJitsiConferenceOptions } from './fromJitsiConference.js';
+import {
+  useContentRect,
+  type UseContentRectResult,
+} from './contentRect.native.js';
+import {
+  fromJitsiConference,
+  type FromJitsiConferenceOptions,
+} from './fromJitsiConference.js';
 
 export interface UseScribbleSessionOptions {
   /** The (real or fake) lib-jitsi-meet JitsiConference this session builds
    * its own adapter over, via fromJitsiConference (Task 2). Ignored if
    * `transport` is supplied directly. */
   conference?: unknown;
+  /** Passed straight through to `fromJitsiConference` at session
+   * construction only — never read again afterward. 05-REVIEW.md CR-02: this
+   * hook does NOT require the caller to memoize this object (it is read via
+   * an internal ref, not depended on directly), so passing an inline object
+   * literal — `<ScribbleOverlay transportOptions={{ p2pEnabled: false }} />`
+   * — is safe and will NOT tear down/rebuild the session on every host
+   * re-render. It also means a change to this object's CONTENTS (as opposed
+   * to `conference`'s own identity) is never itself a reason to rebuild the
+   * session — if a host genuinely needs to apply new `transportOptions` to
+   * an existing conference, it must do so by constructing a new
+   * `conference`/`transport` (or a future explicit `sessionKey`), not by
+   * relying on this object's identity. */
   transportOptions?: FromJitsiConferenceOptions;
   /** Test-only / advanced seam: inject a ScribbleTransport directly,
    * bypassing fromJitsiConference's own construction entirely. This is the
@@ -120,13 +138,23 @@ interface SessionHandles {
   store: StrokeStore;
 }
 
-export function useScribbleSession(options: UseScribbleSessionOptions): UseScribbleSessionResult {
-  const { conference, transportOptions, transport: injectedTransport, frameDims, onRemoteStrokeStart, onRemoteTap } =
-    options;
+export function useScribbleSession(
+  options: UseScribbleSessionOptions,
+): UseScribbleSessionResult {
+  const {
+    conference,
+    transportOptions,
+    transport: injectedTransport,
+    frameDims,
+    onRemoteStrokeStart,
+    onRemoteTap,
+  } = options;
 
   const sessionRef = useRef<SessionHandles | null>(null);
   const [localId, setLocalId] = useState('');
-  const [remotePresenceBySender, setRemotePresenceBySender] = useState<ReadonlyMap<string, boolean>>(new Map());
+  const [remotePresenceBySender, setRemotePresenceBySender] = useState<
+    ReadonlyMap<string, boolean>
+  >(new Map());
   // D-04's own "previous store.subscribe() snapshot" bookkeeping — keyed
   // identically to StrokeStore's own internal composite key (`from` and
   // `id` joined by a space).
@@ -134,8 +162,36 @@ export function useScribbleSession(options: UseScribbleSessionOptions): UseScrib
 
   const { contentRect, onLayout } = useContentRect(frameDims);
 
+  // 05-REVIEW.md CR-02: `transportOptions` is a plain options OBJECT
+  // (`FromJitsiConferenceOptions | undefined`), and `ScribbleOverlayProps`
+  // lets a host pass it as an inline JSX literal
+  // (`<ScribbleOverlay transportOptions={{ p2pEnabled: false }} .../>`) — the
+  // natural, idiomatic way to pass it, and one that recreates a brand-new
+  // object on every render of the HOST's own component. Reading it through a
+  // ref updated on every render (instead of depending on it directly below)
+  // means that churn no longer tears down and rebuilds this entire session —
+  // the effect only re-reads whatever `transportOptions` most recently was,
+  // at the moment it actually re-runs for some OTHER reason.
+  //
+  // `conference`/`injectedTransport` deliberately stay in the effect's own
+  // dependency array below, unlike `transportOptions`: unlike an options
+  // object, a real `JitsiConference` (or an injected test transport) is a
+  // single, stable, session-scoped object a host obtains once and passes
+  // down — its identity changing IS the legitimate signal that the host
+  // actually swapped to a different conference (e.g. a real reconnection),
+  // and that case must still tear down and rebuild the whole session (a new
+  // transport, a new StrokeStore, a fresh Presence announce) exactly as
+  // before. Only the false-positive churn source (`transportOptions`) is
+  // being fixed here — this is deliberately NOT "depend on nothing but
+  // injectedTransport," which would also silently stop reacting to a real
+  // `conference` swap when no `transport` is injected.
+  const transportOptionsRef = useRef(transportOptions);
+  transportOptionsRef.current = transportOptions;
+
   useEffect(() => {
-    const transport = injectedTransport ?? fromJitsiConference(conference, transportOptions);
+    const transport =
+      injectedTransport ??
+      fromJitsiConference(conference, transportOptionsRef.current);
     const store = new StrokeStore({ localId: transport.localId() });
     // Plan 05-04 fix (Rule 1 - bug, found integrating ScribbleOverlay):
     // StrokeStore's own lastTickNow defaults to 0 until the first tick(now)
@@ -174,7 +230,9 @@ export function useScribbleSession(options: UseScribbleSessionOptions): UseScrib
     // hand-built via transport.send() directly (D-02, unchanged) — this
     // hook is for STROKE authoring frames only, never re-emitting anything
     // apply() already ingested (T-03-03-01, StrokeStore's own contract).
-    const unsubscribeOutbound = store.onOutbound((frame) => transport.send(frame));
+    const unsubscribeOutbound = store.onOutbound((frame) =>
+      transport.send(frame),
+    );
 
     const unsubscribeTransport = transport.subscribe((from, payload) => {
       // T-05-03 (CR-01 fix, 05-REVIEW.md): call apply() FIRST and
@@ -219,7 +277,12 @@ export function useScribbleSession(options: UseScribbleSessionOptions): UseScrib
     // D-02/D-03: presence is hand-built and sent via transport.send()
     // directly — never through store.beginLocal/appendLocal/endLocal.
     const sendPresence = (vis: boolean): void => {
-      transport.send({ v: PROTOCOL_VERSION, t: MSG_PRESENCE, from: transport.localId(), vis });
+      transport.send({
+        v: PROTOCOL_VERSION,
+        t: MSG_PRESENCE,
+        from: transport.localId(),
+        vis,
+      });
     };
     // Pitfall 2: send the initial frame BEFORE registering the listener, so
     // a session that starts already backgrounded still announces its true
@@ -227,9 +290,12 @@ export function useScribbleSession(options: UseScribbleSessionOptions): UseScrib
     // 'background' and 'inactive' both map to vis:false; only 'active'
     // maps to vis:true (D-03's literal wording).
     sendPresence(AppState.currentState === 'active');
-    const appStateSubscription = AppState.addEventListener('change', (nextState) => {
-      sendPresence(nextState === 'active');
-    });
+    const appStateSubscription = AppState.addEventListener(
+      'change',
+      (nextState) => {
+        sendPresence(nextState === 'active');
+      },
+    );
 
     // D-04: diff store.subscribe() snapshots to fire onRemoteStrokeStart
     // optimistically at first appearance, and onRemoteTap additionally
@@ -248,7 +314,8 @@ export function useScribbleSession(options: UseScribbleSessionOptions): UseScrib
         if (stroke.from === LOCAL_SENDER) continue;
         const prior = prev.get(key);
         if (!prior) onRemoteStrokeStart?.(stroke.from);
-        if (stroke.kind === 'tap' && prior?.kind !== 'tap') onRemoteTap?.(stroke.from);
+        if (stroke.kind === 'tap' && prior?.kind !== 'tap')
+          onRemoteTap?.(stroke.from);
       }
       prevStrokeSnapshotRef.current = next;
     });
@@ -269,15 +336,27 @@ export function useScribbleSession(options: UseScribbleSessionOptions): UseScrib
     // more often than intended. Both are read via closure and are expected
     // to be referentially stable across the session's lifetime — matching
     // mount.ts's own one-time construction.
-  }, [conference, injectedTransport, transportOptions]);
+    //
+    // 05-REVIEW.md CR-02: `transportOptions` is deliberately NOT in this
+    // list — see `transportOptionsRef`'s own comment above this effect.
+    // `conference`/`injectedTransport` stay, since their identity changing
+    // is the legitimate "the host swapped sessions" signal this effect must
+    // still react to.
+  }, [conference, injectedTransport]);
 
-  const getStrokesSnapshot = useCallback((): readonly Stroke[] => sessionRef.current?.store.snapshot() ?? [], []);
+  const getStrokesSnapshot = useCallback(
+    (): readonly Stroke[] => sessionRef.current?.store.snapshot() ?? [],
+    [],
+  );
 
-  const subscribeStrokes = useCallback((fn: (strokes: readonly Stroke[]) => void): (() => void) => {
-    const session = sessionRef.current;
-    if (!session) return (): void => {};
-    return session.store.subscribe(fn);
-  }, []);
+  const subscribeStrokes = useCallback(
+    (fn: (strokes: readonly Stroke[]) => void): (() => void) => {
+      const session = sessionRef.current;
+      if (!session) return (): void => {};
+      return session.store.subscribe(fn);
+    },
+    [],
+  );
 
   const beginLocal = useCallback(
     (id: string): void => {
