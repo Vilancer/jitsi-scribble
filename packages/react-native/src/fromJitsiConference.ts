@@ -141,6 +141,23 @@ class JitsiTransportAdapter implements ScribbleTransport {
   private readonly subscribers = new Set<(from: string, payload: unknown) => void>();
   private readonly stateListeners = new Set<(s: TransportState) => void>();
 
+  // Accepted limitation (05-REVIEW.md WR-01, mirroring packages/web/src/
+  // mount.ts's own WR-03 comment for the identical limitation on the web
+  // adapter): this constructor registers three `conference.on(...)`
+  // listeners below, and nothing in this class — nor in useScribbleSession.ts's
+  // effect cleanup, which only unsubscribes this adapter's OWN Sets
+  // (subscribers/stateListeners), never the underlying `conference` — ever
+  // calls `conference.off(...)` to remove them. `ScribbleTransport`
+  // (protocol) exposes no `destroy()`/`off()` hook for a real adapter to
+  // implement, so those closures (and the `conference` reference they close
+  // over) remain live for as long as the underlying `conference` object
+  // exists, even after a session built over this adapter tears down. A
+  // `conference` object must therefore NEVER be reused across two
+  // `fromJitsiConference`/`useScribbleSession` constructions — doing so
+  // would leave the old adapter's listeners firing forever, duplicating
+  // every ENDPOINT_MESSAGE_RECEIVED dispatch across both the old and new
+  // adapter's `subscribers` sets. Widening `ScribbleTransport` with an
+  // optional detach hook is the fix if this proves to matter in practice.
   constructor(conference: Record<string, unknown>, winner: SendCandidate, opts?: FromJitsiConferenceOptions) {
     this.conference = conference;
     this.winner = winner;
