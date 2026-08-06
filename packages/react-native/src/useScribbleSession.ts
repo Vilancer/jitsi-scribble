@@ -98,11 +98,18 @@ export interface UseScribbleSessionOptions {
   frameDims?: FrameDims;
   /** D-04: fires optimistically the instant a new remote stroke appears in
    * a store.subscribe() snapshot diff — never for the local author's own
-   * strokes. */
+   * strokes. 05-REVIEW.md WR-01: this hook does NOT require this callback to
+   * be referentially stable across renders (it is read through an internal
+   * ref at call time, never closed over directly by the effect that
+   * invokes it), so passing an inline arrow function that closes over the
+   * host's own changing render-scope state — `onRemoteStrokeStart={(from) =>
+   * log(currentCallId, from)}` — is safe and always uses the latest
+   * callback, never a stale one captured at session-construction time. */
   onRemoteStrokeStart?: (from: string) => void;
   /** D-04: fires additionally, once, the instant a remote stroke's kind
    * transitions to 'tap' — never withheld until classification completes,
-   * never fired for the local author's own strokes. */
+   * never fired for the local author's own strokes. 05-REVIEW.md WR-01: the
+   * same no-stability-required contract as `onRemoteStrokeStart` above. */
   onRemoteTap?: (from: string) => void;
 }
 
@@ -209,6 +216,25 @@ export function useScribbleSession(
   // depends on `frameDims`'s reference at all.
   const frameDimsRef = useRef(frameDims);
   frameDimsRef.current = frameDims;
+
+  // 05-REVIEW.md WR-01: the same ref-based pattern as `transportOptionsRef`/
+  // `frameDimsRef` above, applied to `onRemoteStrokeStart`/`onRemoteTap`.
+  // Unlike those two, this is not a rebuild-avoidance concern — it is a
+  // stale-closure CORRECTNESS bug. The effect below that actually invokes
+  // these callbacks (the `store.subscribe(...)` listener) only (re-)runs on
+  // `[conference, injectedTransport]` changes, so closing over the
+  // destructured `onRemoteStrokeStart`/`onRemoteTap` directly meant every
+  // later render's new callback identity was silently ignored for the rest
+  // of the session's lifetime — e.g. a host's idiomatic inline
+  // `onRemoteStrokeStart={(from) => log(currentCallId, from)}` would freeze
+  // on the FIRST render's `currentCallId` forever. Reading the latest
+  // callback through a ref at call time (inside the effect, not in its
+  // dependency array) fixes the staleness with no rebuild-avoidance
+  // trade-off to weigh: the effect's own dependency array is unchanged.
+  const onRemoteStrokeStartRef = useRef(onRemoteStrokeStart);
+  onRemoteStrokeStartRef.current = onRemoteStrokeStart;
+  const onRemoteTapRef = useRef(onRemoteTap);
+  onRemoteTapRef.current = onRemoteTap;
 
   useEffect(() => {
     const transport =
@@ -335,9 +361,13 @@ export function useScribbleSession(
         // "never fire for the local author's own strokes" (D-04).
         if (stroke.from === LOCAL_SENDER) continue;
         const prior = prev.get(key);
-        if (!prior) onRemoteStrokeStart?.(stroke.from);
+        // 05-REVIEW.md WR-01: read through the ref, not the destructured
+        // closure variable, so this always invokes whichever callback the
+        // host most recently rendered with — see onRemoteStrokeStartRef's
+        // own comment above this effect.
+        if (!prior) onRemoteStrokeStartRef.current?.(stroke.from);
         if (stroke.kind === 'tap' && prior?.kind !== 'tap')
-          onRemoteTap?.(stroke.from);
+          onRemoteTapRef.current?.(stroke.from);
       }
       prevStrokeSnapshotRef.current = next;
     });
@@ -355,9 +385,13 @@ export function useScribbleSession(
     // constructing a NEW transport/store on every identity change to either
     // callback would tear down and rebuild the entire session (including a
     // fresh transport.subscribe registration on the real conference) far
-    // more often than intended. Both are read via closure and are expected
-    // to be referentially stable across the session's lifetime — matching
-    // mount.ts's own one-time construction.
+    // more often than intended. 05-REVIEW.md WR-01: both are now read
+    // through onRemoteStrokeStartRef/onRemoteTapRef at call time (see above
+    // this effect), NOT via closure, so — unlike an earlier version of this
+    // comment claimed — neither callback is required to stay referentially
+    // stable across the session's lifetime; a host's inline callback that
+    // closes over its own changing render-scope state is picked up on its
+    // very next invocation.
     //
     // 05-REVIEW.md CR-02: `transportOptions` is deliberately NOT in this
     // list — see `transportOptionsRef`'s own comment above this effect.
