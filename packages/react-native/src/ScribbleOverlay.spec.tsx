@@ -134,3 +134,76 @@ describe('ScribbleOverlay — receiveAnnotations render-side filter (AWARE-02/UI
     expect(queryAllByTestId(/^scribble-stroke-bob-/)).toHaveLength(0);
   });
 });
+
+describe('ScribbleOverlay — the WHOLE memoization chain stays stable under simultaneous, value-equal-but-not-referentially-equal churn (05-REVIEW.md CR-01 rounds 2/3 + WR-02, closing the recurring pan-churn bug class end to end)', () => {
+  function layoutEvent(width: number, height: number): LayoutChangeEvent {
+    return { nativeEvent: { layout: { x: 0, y: 0, width, height } } } as unknown as LayoutChangeEvent;
+  }
+
+  function currentPanIdentity(
+    getByTestId: (id: string) => { unstable_fiber: unknown },
+  ): unknown {
+    const gestureCatcher = getByTestId('scribble-gesture-catcher');
+    const detectorFiber = findAncestorFiber(
+      gestureCatcher.unstable_fiber as unknown as FiberLike,
+      GestureDetector,
+    );
+    return detectorFiber?.memoizedProps.gesture;
+  }
+
+  it('re-rendering with fresh transportOptions/frameDims object literals AND repeated onLayout refires carrying identical width/height never changes the mounted Gesture.Pan() identity', async () => {
+    const transport = createTestTransport('me');
+
+    const { getByTestId, rerender } = await render(
+      <ScribbleOverlay
+        drawModeEnabled={true}
+        receiveAnnotations={true}
+        transport={transport}
+        frameDims={{ w: 100, h: 100 }}
+        transportOptions={{}}
+      />,
+    );
+
+    await act(async () => {
+      fireEvent(
+        getByTestId('scribble-overlay-root'),
+        'layout',
+        layoutEvent(100, 100),
+      );
+    });
+
+    const firstPan = currentPanIdentity(getByTestId);
+    expect(firstPan).toBeDefined();
+
+    // Three successive re-renders, each supplying a BRAND-NEW object
+    // literal for `transportOptions` AND `frameDims` (exactly what an
+    // unmemoized host re-render produces — the natural, idiomatic JSX
+    // form) AND re-firing `onLayout` with the SAME width/height (exactly
+    // what RN's own well-documented redundant-refire behavior produces) —
+    // simultaneously churning every non-primitive value this review series
+    // found feeding, directly or transitively, into gesture.ts's `pan`
+    // useMemo dependency chain (`transportOptions` -> round 1;
+    // `frameDims`/`surfaceBox` -> rounds 2/3). This is the single test that
+    // would have caught all three rounds' bugs at once.
+    for (let i = 0; i < 3; i++) {
+      await act(async () => {
+        rerender(
+          <ScribbleOverlay
+            drawModeEnabled={true}
+            receiveAnnotations={true}
+            transport={transport}
+            frameDims={{ w: 100, h: 100 }}
+            transportOptions={{}}
+          />,
+        );
+        fireEvent(
+          getByTestId('scribble-overlay-root'),
+          'layout',
+          layoutEvent(100, 100),
+        );
+      });
+
+      expect(currentPanIdentity(getByTestId)).toBe(firstPan);
+    }
+  });
+});
