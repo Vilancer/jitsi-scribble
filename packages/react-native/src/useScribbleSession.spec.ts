@@ -201,6 +201,74 @@ describe('useScribbleSession — an unmemoized transportOptions object does NOT 
   });
 });
 
+describe('useScribbleSession — an unmemoized frameDims object does NOT churn beginLocal/appendLocal/contentRect identity on re-render (05-REVIEW.md CR-01, re-review)', () => {
+  it('re-rendering with a brand-new frameDims object literal carrying the same w/h values keeps contentRect, appendLocal, and beginLocal referentially stable', async () => {
+    AppState.currentState = 'active';
+    const transport = createTestTransport('me');
+
+    const { result, rerender } = await renderHook(
+      (props: { frameDims: { w: number; h: number } }) =>
+        useScribbleSession({ transport, frameDims: props.frameDims }),
+      { initialProps: { frameDims: { w: 100, h: 100 } } },
+    );
+
+    // Measure the overlay surface so contentRect actually resolves to a
+    // non-null rect, not just `null` twice in a row (which would trivially
+    // "pass" without exercising the memo this fix touches).
+    await act(() => {
+      result.current.onLayout({
+        nativeEvent: { layout: { x: 0, y: 0, width: 100, height: 100 } },
+      } as never);
+    });
+
+    const contentRectBefore = result.current.contentRect;
+    const appendLocalBefore = result.current.appendLocal;
+    const beginLocalBefore = result.current.beginLocal;
+    expect(contentRectBefore).not.toBeNull();
+
+    // A BRAND-NEW object literal every time, same w/h — exactly what a host
+    // passing `frameDims={{ w: track.width, h: track.height }}` inline in
+    // JSX produces on every one of ITS OWN re-renders, with no
+    // memoization. Pre-fix, this identity change alone churned
+    // contentRect's memo (keyed on `frameDims` by reference), which cascaded
+    // into appendLocal's `useCallback([contentRect])` and beginLocal's
+    // `useCallback([frameDims])` — the second, independent path to the same
+    // churn this test also covers.
+    await rerender({ frameDims: { w: 100, h: 100 } });
+    await rerender({ frameDims: { w: 100, h: 100 } });
+
+    expect(result.current.contentRect).toBe(contentRectBefore);
+    expect(result.current.appendLocal).toBe(appendLocalBefore);
+    expect(result.current.beginLocal).toBe(beginLocalBefore);
+  });
+
+  it('a frameDims object literal whose w/h VALUES actually change still produces a new contentRect (the legitimate case the fix above must not break)', async () => {
+    AppState.currentState = 'active';
+    const transport = createTestTransport('me');
+
+    const { result, rerender } = await renderHook(
+      (props: { frameDims: { w: number; h: number } }) =>
+        useScribbleSession({ transport, frameDims: props.frameDims }),
+      { initialProps: { frameDims: { w: 100, h: 100 } } },
+    );
+
+    await act(() => {
+      result.current.onLayout({
+        nativeEvent: { layout: { x: 0, y: 0, width: 100, height: 100 } },
+      } as never);
+    });
+
+    const contentRectBefore = result.current.contentRect;
+    expect(contentRectBefore).not.toBeNull();
+
+    // A genuine value change — e.g. the sender's real video track resized —
+    // must still recompute contentRect.
+    await rerender({ frameDims: { w: 200, h: 100 } });
+
+    expect(result.current.contentRect).not.toBe(contentRectBefore);
+  });
+});
+
 describe('useScribbleSession — malformed/undecodable payloads are NOT exempt from the rate limiter (05-REVIEW.md CR-01)', () => {
   it("sending RATE_CAPACITY + 1 undecodable (non-JSON garbage) payloads from one sender in rapid succession triggers the per-sender rate-limit warning, proving apply() — and therefore checkRateLimit — runs even when this listener's own decode() would fail", async () => {
     AppState.currentState = 'active';

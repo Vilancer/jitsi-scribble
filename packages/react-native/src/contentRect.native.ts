@@ -58,11 +58,23 @@ export function useContentRect(frameDims: FrameDims | undefined): UseContentRect
     [],
   );
 
+  // 05-REVIEW.md CR-01 (re-review): keyed on frameDims's PRIMITIVE w/h
+  // values, not the object reference. A host passing an inline, unmemoized
+  // `frameDims={{ w, h }}` object literal — the natural, undocumented way to
+  // pass live video dimensions — produced a brand-new reference every render
+  // even when the underlying numbers never changed, which churned this
+  // memo's own identity and cascaded into useScribbleSession.ts's
+  // `appendLocal` (keyed on `[contentRect]`), then ScribbleOverlay.tsx's
+  // `onLocalBegin`/`onLocalSample`, then gesture.ts's memoized `Gesture.Pan()`
+  // — reopening WR-02's `pan`-identity-churn bug via a second, independent
+  // path. Depending on `frameDims?.w`/`frameDims?.h` directly means an
+  // unstable `frameDims` reference with the same numbers no longer changes
+  // this memo's result identity.
   const rect = useMemo((): ContentRect | null => {
     if (!frameDims || !surfaceBox) return null;
     const repaired = repairAspect(surfaceBox, frameDims);
     return contentRect(repaired.w, repaired.h, surfaceBox.w, surfaceBox.h, 'contain');
-  }, [frameDims, surfaceBox]);
+  }, [frameDims?.w, frameDims?.h, surfaceBox]);
 
   return { contentRect: rect, onLayout };
 }

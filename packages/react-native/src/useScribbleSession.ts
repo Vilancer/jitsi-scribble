@@ -87,7 +87,14 @@ export interface UseScribbleSessionOptions {
   transport?: ScribbleTransport;
   /** The video content the local drawer is currently looking at — passed
    * straight through to contentRect.native.ts's useContentRect; `undefined`
-   * until the host knows it. */
+   * until the host knows it. 05-REVIEW.md CR-01 (re-review): this hook does
+   * NOT require the caller to memoize this object (its own contents are read
+   * through an internal ref inside `beginLocal`, and `contentRect.native.ts`
+   * keys its own memo on `frameDims.w`/`frameDims.h` rather than this
+   * object's reference), so passing an inline object literal —
+   * `<ScribbleOverlay frameDims={{ w, h }} />` — is safe and will NOT churn
+   * `beginLocal`/`appendLocal`/the local-authoring `Gesture.Pan()`'s identity
+   * on every render. */
   frameDims?: FrameDims;
   /** D-04: fires optimistically the instant a new remote stroke appears in
    * a store.subscribe() snapshot diff — never for the local author's own
@@ -187,6 +194,21 @@ export function useScribbleSession(
   // `conference` swap when no `transport` is injected.
   const transportOptionsRef = useRef(transportOptions);
   transportOptionsRef.current = transportOptions;
+
+  // 05-REVIEW.md CR-01 (re-review): the same ref-based pattern as
+  // `transportOptionsRef` above, applied to `frameDims`. `beginLocal` below
+  // used to depend on `frameDims` directly, so a host passing an inline,
+  // unmemoized `frameDims={{ w, h }}` object literal churned `beginLocal`'s
+  // own identity every render even when the numbers never changed — which
+  // cascaded into ScribbleOverlay.tsx's `onLocalBegin` (keyed on
+  // `[session.beginLocal, session.appendLocal]`) and then gesture.ts's
+  // memoized `Gesture.Pan()`, reopening WR-02's `pan`-identity-churn bug via
+  // a second, independent path (the other path — `contentRect`'s own
+  // reference instability — is fixed in contentRect.native.ts). Reading the
+  // latest `frameDims` through a ref means `beginLocal`'s identity no longer
+  // depends on `frameDims`'s reference at all.
+  const frameDimsRef = useRef(frameDims);
+  frameDimsRef.current = frameDims;
 
   useEffect(() => {
     const transport =
@@ -358,14 +380,12 @@ export function useScribbleSession(
     [],
   );
 
-  const beginLocal = useCallback(
-    (id: string): void => {
-      const session = sessionRef.current;
-      if (!session || !frameDims) return;
-      session.store.beginLocal(id, frameDims);
-    },
-    [frameDims],
-  );
+  const beginLocal = useCallback((id: string): void => {
+    const session = sessionRef.current;
+    const dims = frameDimsRef.current;
+    if (!session || !dims) return;
+    session.store.beginLocal(id, dims);
+  }, []); // stable regardless of frameDims identity — see frameDimsRef above
 
   const appendLocal = useCallback(
     (id: string, x: number, y: number): void => {
