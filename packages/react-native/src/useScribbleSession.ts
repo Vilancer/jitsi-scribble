@@ -129,6 +129,22 @@ export function useScribbleSession(options: UseScribbleSessionOptions): UseScrib
   useEffect(() => {
     const transport = injectedTransport ?? fromJitsiConference(conference, transportOptions);
     const store = new StrokeStore({ localId: transport.localId() });
+    // Plan 05-04 fix (Rule 1 - bug, found integrating ScribbleOverlay):
+    // StrokeStore's own lastTickNow defaults to 0 until the first tick(now)
+    // call. Without this seed, any stroke inserted (a remote Start, or a
+    // local beginLocal) BEFORE the RAF loop below fires its first real
+    // callback (~one frame after mount, deferred via requestAnimationFrame)
+    // gets createdAt/lastMoveAt stamped at 0 — epoch. The very first REAL
+    // tick(Date.now()) that follows then computes `now - lastMoveAt` as
+    // Date.now() itself (~10^12 ms), which is always >= STALE_MS, so
+    // computePhaseAndAlpha's stale-watchdog branch fires immediately and the
+    // stroke fades to 'dead' and is evicted before ever being visibly
+    // rendered — even though zero real wall-clock time has actually passed.
+    // Seeding the clock synchronously, before wiring transport.subscribe or
+    // scheduling the RAF loop, closes this race for both remote (Start
+    // frame arriving before the first RAF frame) and local (a touch
+    // beginning before the first RAF frame) strokes.
+    store.tick(Date.now());
     sessionRef.current = { transport, store };
     setLocalId(transport.localId());
     prevStrokeSnapshotRef.current = new Map();
