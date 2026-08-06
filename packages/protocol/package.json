@@ -51,6 +51,12 @@
       "react-native": "./dist/render/index.js",
       "import": "./dist/render/index.js",
       "default": "./dist/render/index.js"
+    },
+    "./wire-constants": {
+      "types": "./dist/wire-constants.d.ts",
+      "react-native": "./dist/wire-constants.js",
+      "import": "./dist/wire-constants.js",
+      "default": "./dist/wire-constants.js"
     }
   },
   "files": [
