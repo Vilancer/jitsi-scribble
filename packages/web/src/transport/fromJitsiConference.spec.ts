@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { fromJitsiConference } from './fromJitsiConference.js';
@@ -15,7 +18,7 @@ describe('fromJitsiConference — probe order (PROTO-05)', () => {
     emit('conference.dataChannelOpened');
     transport.send('hello');
 
-    expect(sentPayloads).toEqual([{ method: 'sendMessage', payload: 'hello' }]);
+    expect(sentPayloads).toMatchObject([{ method: 'sendMessage', payload: 'hello' }]);
   });
 
   it('conference exposing only broadcastEndpointMessage: send() calls broadcastEndpointMessage', () => {
@@ -27,7 +30,7 @@ describe('fromJitsiConference — probe order (PROTO-05)', () => {
     emit('conference.dataChannelOpened');
     transport.send('hello');
 
-    expect(sentPayloads).toEqual([{ method: 'broadcastEndpointMessage', payload: 'hello' }]);
+    expect(sentPayloads).toMatchObject([{ method: 'broadcastEndpointMessage', payload: 'hello' }]);
   });
 
   it('conference exposing only sendEndpointMessage: send() calls sendEndpointMessage', () => {
@@ -39,7 +42,7 @@ describe('fromJitsiConference — probe order (PROTO-05)', () => {
     emit('conference.dataChannelOpened');
     transport.send('hello');
 
-    expect(sentPayloads).toEqual([{ method: 'sendEndpointMessage', payload: 'hello' }]);
+    expect(sentPayloads).toMatchObject([{ method: 'sendEndpointMessage', payload: 'hello' }]);
   });
 
   it('conference exposing all three: send() calls sendMessage, never the other two (probe order is preference order)', () => {
@@ -51,7 +54,7 @@ describe('fromJitsiConference — probe order (PROTO-05)', () => {
     emit('conference.dataChannelOpened');
     transport.send('hello');
 
-    expect(sentPayloads).toEqual([{ method: 'sendMessage', payload: 'hello' }]);
+    expect(sentPayloads).toMatchObject([{ method: 'sendMessage', payload: 'hello' }]);
   });
 
   it('conference exposing broadcastEndpointMessage and sendEndpointMessage (no sendMessage): send() calls broadcastEndpointMessage, never sendEndpointMessage', () => {
@@ -63,7 +66,7 @@ describe('fromJitsiConference — probe order (PROTO-05)', () => {
     emit('conference.dataChannelOpened');
     transport.send('hello');
 
-    expect(sentPayloads).toEqual([{ method: 'broadcastEndpointMessage', payload: 'hello' }]);
+    expect(sentPayloads).toMatchObject([{ method: 'broadcastEndpointMessage', payload: 'hello' }]);
   });
 
   it('conference exposing none of the three: constructing throws, naming all three method names', () => {
@@ -103,7 +106,7 @@ describe('fromJitsiConference — readiness state machine depth (PROTO-06/07)', 
 
     expect(transport.state).toBe('ready');
     expect(() => transport.send('immediate')).not.toThrow();
-    expect(sentPayloads).toEqual([{ method: 'sendMessage', payload: 'immediate' }]);
+    expect(sentPayloads).toMatchObject([{ method: 'sendMessage', payload: 'immediate' }]);
   });
 
   it('conference.dataChannelOpened is an idempotent no-op when already ready (the "normal" case: adapter constructed before the real event fires)', () => {
@@ -163,7 +166,7 @@ describe('fromJitsiConference — readiness state machine depth (PROTO-06/07)', 
 
     expect(transport.state).toBe('ready');
     transport.send('after-relatch');
-    expect(sentPayloads).toEqual([{ method: 'sendMessage', payload: 'after-relatch' }]);
+    expect(sentPayloads).toMatchObject([{ method: 'sendMessage', payload: 'after-relatch' }]);
   });
 
   it('a throw-induced degraded adapter also re-latches to ready, and a post-relatch send() is delivered via the winner method again', () => {
@@ -180,7 +183,7 @@ describe('fromJitsiConference — readiness state machine depth (PROTO-06/07)', 
 
     expect(transport.state).toBe('ready');
     transport.send('second');
-    expect(sentPayloads).toEqual([{ method: 'sendMessage', payload: 'second' }]);
+    expect(sentPayloads).toMatchObject([{ method: 'sendMessage', payload: 'second' }]);
   });
 
   it('onStateChange(fn) fires fn on every transition in order (subscribing after construction, when the adapter is already ready by default, observes no initial-ready transition); unsubscribe stops further notifications', () => {
@@ -257,5 +260,48 @@ describe('fromJitsiConference — p2p warning branch matrix (PROTO-08)', () => {
 
     expect(warnSpy).toHaveBeenCalledTimes(1);
     expect(warnSpy.mock.calls[0]?.[0]).toMatch(/^\[jitsi-scribble\] /);
+  });
+});
+
+// PROTO-10 (Plan 06-02 Task 2): this behavioral + source-inspection pair is
+// the PRIMARY proof that stroke traffic never falls back to XMPP. A
+// Prosody-log-based assertion was evaluated and rejected as a false-negative
+// trap (RESEARCH.md Pitfall R1): at this deployment's default log verbosity
+// (LOG_LEVEL=info, no stanza-dump directive), a build secretly sending over
+// XMPP would still produce a clean log, so a log grep passes either way. The
+// manual LOG_LEVEL=debug confirmatory spike (RESEARCH.md Open Question 3)
+// remains optional and was not performed this phase, given the deployment's
+// documented prior disk-exhaustion incident from unbounded logging.
+describe('fromJitsiConference — PROTO-10: no XMPP-fallback candidate', () => {
+  it('sendMessage is always invoked with viaBridge === true — the bridge-channel path, never the XMPP path', () => {
+    const { conference, emit, sentPayloads } = createFakeJitsiConference({ methods: ['sendMessage'] });
+    const transport = fromJitsiConference(conference, { p2pEnabled: false });
+
+    emit('conference.dataChannelOpened');
+    transport.send('proto-10-probe');
+
+    expect(sentPayloads).toHaveLength(1);
+    expect(sentPayloads[0].method).toBe('sendMessage');
+    // lib-jitsi-meet's own sendMessage(message, to, sendThroughVideobridge)
+    // signature: a literal `false` third argument IS the XMPP fallback.
+    expect(sentPayloads[0].args[2]).toBe(true);
+  });
+
+  it("resolveSend()'s probe list contains no viaBridge=false candidate at the source level", () => {
+    // vitest runs with cwd at the package root (pnpm --filter @vilancer/web);
+    // import.meta.url is rewritten to a non-file scheme under this setup.
+    const sourcePath = join(process.cwd(), 'src/transport/fromJitsiConference.ts');
+    // Strip comments first: resolveSend()'s own docblock deliberately names
+    // the unimplemented `sendMessage(payload, '', false)` extension point,
+    // which must not false-positive this assertion.
+    const source = readFileSync(sourcePath, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/[^\n]*/g, '');
+
+    // The only sendMessage invocation passes a literal `true` third argument…
+    expect(source).toMatch(/\(p,\s*'',\s*true\)/);
+    // …and no call site anywhere passes `false` as the third argument.
+    expect(source).not.toMatch(/\(p,\s*'',\s*false\)/);
+    expect(source).not.toMatch(/sendMessage[^\n]*false\s*\)/);
   });
 });

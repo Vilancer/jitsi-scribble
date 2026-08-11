@@ -15,6 +15,10 @@ export type FakeConferenceMethod = 'sendMessage' | 'broadcastEndpointMessage' | 
 export interface FakeSentCall {
   method: FakeConferenceMethod;
   payload: unknown;
+  /** Every positional argument the underlying method was invoked with —
+   * PROTO-10's tests assert sendMessage's third argument (viaBridge) is
+   * strictly `true`, never the XMPP-fallback `false`. */
+  args: unknown[];
 }
 
 export interface FakeJitsiConference {
@@ -52,12 +56,12 @@ export function createFakeJitsiConference(opts?: {
   const methods = new Set(opts?.methods ?? []);
   let throwOnNextSend = opts?.throwOnSend ?? false;
 
-  function recordOrThrow(method: FakeConferenceMethod, payload: unknown): void {
+  function recordOrThrow(method: FakeConferenceMethod, payload: unknown, args: unknown[]): void {
     if (throwOnNextSend) {
       throwOnNextSend = false;
       throw new Error(`[fakes] simulated ${method} failure`);
     }
-    sentPayloads.push({ method, payload });
+    sentPayloads.push({ method, payload, args });
   }
 
   const conference: Record<string, unknown> = {
@@ -78,18 +82,18 @@ export function createFakeJitsiConference(opts?: {
   };
 
   if (methods.has('sendMessage')) {
-    conference.sendMessage = (payload: unknown, _to: string, _viaBridge: boolean): void => {
-      recordOrThrow('sendMessage', payload);
+    conference.sendMessage = (payload: unknown, to: string, viaBridge: boolean): void => {
+      recordOrThrow('sendMessage', payload, [payload, to, viaBridge]);
     };
   }
   if (methods.has('broadcastEndpointMessage')) {
     conference.broadcastEndpointMessage = (payload: unknown): void => {
-      recordOrThrow('broadcastEndpointMessage', payload);
+      recordOrThrow('broadcastEndpointMessage', payload, [payload]);
     };
   }
   if (methods.has('sendEndpointMessage')) {
-    conference.sendEndpointMessage = (_to: string, payload: unknown): void => {
-      recordOrThrow('sendEndpointMessage', payload);
+    conference.sendEndpointMessage = (to: string, payload: unknown): void => {
+      recordOrThrow('sendEndpointMessage', payload, [to, payload]);
     };
   }
 

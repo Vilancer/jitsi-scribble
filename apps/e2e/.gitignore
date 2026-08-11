@@ -3,3 +3,5 @@
 tests/fixtures/test-transport.iife.js
 test-results/
 playwright-report/
+# Staging JWT secret for e2e auth — never commit (user rotates it out-of-band).
+.env.e2e
