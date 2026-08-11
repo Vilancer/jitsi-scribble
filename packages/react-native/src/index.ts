@@ -1,12 +1,12 @@
 // The public barrel — side-effect-free, matching packages/web/src/index.ts's
-// own convention (named re-exports only). useScribbleSession accepts a raw
-// `conference: unknown` and constructs fromJitsiConference's adapter
-// internally, so fromJitsiConference itself stays an internal implementation
-// detail — not part of this package's public surface, mirroring how
-// packages/web's own bootstrap-only usage of it is likewise unexported here
-// (a host app that needs the lower-level ScribbleTransport seam directly can
-// still reach useScribbleSession's `transport` option, which accepts any
-// object satisfying @vilancer/protocol/transport's ScribbleTransport).
+// own convention (named re-exports only). fromJitsiConference is exported
+// (mirroring packages/web's barrel) so a consumer outside this monorepo can
+// build the probing adapter itself and hand the resulting ScribbleTransport
+// to useScribbleSession's `transport` option — INTEG-03's literal wording
+// (Genius_Native's useJitsiConference constructs the transport, not the
+// overlay).
+export { fromJitsiConference } from './fromJitsiConference.js';
+export type { FromJitsiConferenceOptions } from './fromJitsiConference.js';
 export { ScribbleOverlay } from './ScribbleOverlay.js';
 export type { ScribbleOverlayProps } from './ScribbleOverlay.js';
 export { useScribbleSession } from './useScribbleSession.js';

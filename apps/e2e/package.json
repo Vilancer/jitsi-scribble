@@ -1,0 +1,19 @@
+{
+  "name": "e2e",
+  "version": "0.0.1",
+  "private": true,
+  "devDependencies": {
+    "@vilancer/web": "workspace:*"
+  },
+  "nx": {
+    "targets": {
+      "e2e": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "playwright test",
+          "cwd": "apps/e2e"
+        }
+      }
+    }
+  }
+}
