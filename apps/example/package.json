@@ -2,18 +2,28 @@
   "name": "example",
   "version": "0.0.1",
   "private": true,
-  "type": "module",
-  "main": "./src/main.ts",
-  "types": "./src/main.ts",
-  "exports": {
-    ".": {
-      "types": "./src/main.ts",
-      "import": "./src/main.ts",
-      "default": "./src/main.ts"
-    },
-    "./package.json": "./package.json"
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo run:android"
   },
   "dependencies": {
-    "@vilancer/protocol": "workspace:*"
+    "@vilancer/protocol": "workspace:*",
+    "@vilancer/react-native": "workspace:*",
+    "expo": "55.0.28",
+    "expo-status-bar": "~55.0.5",
+    "react": "19.2.0",
+    "react-native": "0.83.4",
+    "react-native-gesture-handler": "2.30.0",
+    "react-native-reanimated": "4.2.1",
+    "react-native-safe-area-context": "~5.6.2",
+    "react-native-svg": "15.15.5",
+    "react-native-worklets": "0.7.2"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.29.7",
+    "@types/react": "~19.2.10",
+    "babel-preset-expo": "~55.0.24",
+    "typescript": "6.0.3"
   }
 }

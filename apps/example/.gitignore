@@ -1,0 +1,6 @@
+# Expo CNG (Continuous Native Generation) — regenerate with `expo prebuild`,
+# never commit the generated native projects or their build output.
+.expo/
+android/
+ios/
+web-build/

@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "jitsi-scribble-example",
+    "slug": "jitsi-scribble-example",
+    "scheme": "jitsi-scribble-example",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.vilancer.jitsiscribbleexample"
+    }
+  }
+}
