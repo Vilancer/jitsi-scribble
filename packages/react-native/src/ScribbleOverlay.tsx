@@ -59,6 +59,14 @@ export const PRESENCE_UNAWARE_OPACITY_CAP = 0.4;
  * scaling (mirrors CORE_WIDTH_DP's own dp-then-scale convention). */
 const TAP_RING_TARGET_RADIUS_DP = 44;
 
+/** 05-UAT.md re-test feedback (2026-08-11): with a heavily letterboxed
+ * content rect (a landscape share viewed on a portrait phone — the product's
+ * primary scenario), the fit-ratio scaling shrinks the 44dp ring to ~12dp,
+ * which the user judged too small to read as a "look here" signal. The ring
+ * stays proportional to the content everywhere else, but never collapses
+ * below this floor. */
+const TAP_RING_MIN_RADIUS_DP = 24;
+
 /** FEATURES.md "Stroke geometry" table: the tap-ring's expand animation
  * duration — skipped entirely (Reduce Motion) per UI-SPEC Resolution 2B, but
  * never affecting the hold/fade timing that follows. */
@@ -288,7 +296,10 @@ function TapRing({
     contentRect.w / surfaceBox.w,
     contentRect.h / surfaceBox.h,
   );
-  const targetRadius = TAP_RING_TARGET_RADIUS_DP * fitRatio;
+  const targetRadius = Math.max(
+    TAP_RING_TARGET_RADIUS_DP * fitRatio,
+    TAP_RING_MIN_RADIUS_DP,
+  );
   const opacity = renderedOpacity(stroke, isLocal, remotePresence);
 
   const reducedMotion = useReducedMotion();
@@ -465,7 +476,7 @@ export function ScribbleOverlay(props: ScribbleOverlayProps) {
     [session.endLocal],
   );
 
-  const { pan, pathString } = useLocalStrokeGesture({
+  const { gesture, pathString } = useLocalStrokeGesture({
     onLocalBegin,
     onLocalSample,
     onLocalEnd,
@@ -525,7 +536,7 @@ export function ScribbleOverlay(props: ScribbleOverlayProps) {
           })}
       </Svg>
       {drawModeEnabled && (
-        <GestureDetector gesture={pan}>
+        <GestureDetector gesture={gesture}>
           <View
             testID="scribble-gesture-catcher"
             style={StyleSheet.absoluteFillObject}

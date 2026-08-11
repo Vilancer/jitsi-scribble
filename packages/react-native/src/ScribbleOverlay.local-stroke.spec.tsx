@@ -30,8 +30,8 @@ let capturedCallbacks: LocalStrokeGestureCallbacks | null = null;
 const mockPathString: { value: string } = { value: '' };
 
 // `drawModeEnabled={false}` throughout this file means `<GestureDetector
-// gesture={pan}>` is never actually mounted (ScribbleOverlay.tsx renders it
-// conditionally), so `pan`'s exact shape is irrelevant here — only
+// gesture={gesture}>` is never actually mounted (ScribbleOverlay.tsx renders
+// it conditionally), so `gesture`'s exact shape is irrelevant here — only
 // `pathString` and the three callbacks matter for what this file asserts.
 // `useLocalStrokeGesture` itself IS still called unconditionally by
 // ScribbleOverlay (drawModeEnabled only gates the JSX, not the hook call),
@@ -43,7 +43,7 @@ jest.mock('./gesture.js', () => ({
   ): LocalStrokeGestureHandle => {
     capturedCallbacks = callbacks;
     return {
-      pan: {} as LocalStrokeGestureHandle['pan'],
+      gesture: {} as LocalStrokeGestureHandle['gesture'],
       pathString: mockPathString,
     };
   },

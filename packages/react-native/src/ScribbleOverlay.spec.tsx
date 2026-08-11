@@ -57,7 +57,11 @@ function findAncestorFiber(fiber: FiberLike | null, componentType: unknown): Fib
  * internal, untyped bags — the same seam gesture.spec.ts already documents
  * and exercises directly. */
 interface GestureInternals {
-  config: { maxPointers?: number };
+  handlers: {
+    onTouchesDown?: unknown;
+    onTouchesMove?: unknown;
+    onTouchesUp?: unknown;
+  };
 }
 
 describe('ScribbleOverlay — draw-mode pointerEvents and gesture-mount (DRAW-04/09)', () => {
@@ -71,7 +75,7 @@ describe('ScribbleOverlay — draw-mode pointerEvents and gesture-mount (DRAW-04
     expect(queryByTestId('scribble-gesture-catcher')).toBeNull();
   });
 
-  it('pointerEvents reads "auto" and a GestureDetector configured with maxPointers(1) is mounted when drawModeEnabled is true', async () => {
+  it('pointerEvents reads "auto" and a GestureDetector carrying the per-pointer touch handlers is mounted when drawModeEnabled is true', async () => {
     const transport = createTestTransport('me');
     const { getByTestId } = await render(
       <ScribbleOverlay drawModeEnabled={true} receiveAnnotations={true} transport={transport} />,
@@ -83,9 +87,14 @@ describe('ScribbleOverlay — draw-mode pointerEvents and gesture-mount (DRAW-04
     const detectorFiber = findAncestorFiber(gestureCatcher.unstable_fiber as unknown as FiberLike, GestureDetector);
     expect(detectorFiber).not.toBeNull();
     // DRAW-05, restated here for this component's own coverage since this is
-    // the actual mount point real code exercises.
-    const pan = detectorFiber?.memoizedProps.gesture as unknown as GestureInternals;
-    expect(pan.config.maxPointers).toBe(1);
+    // the actual mount point real code exercises: the Manual gesture's
+    // per-pointer touch handlers (gesture.ts's movement-based pointer
+    // selection — the palm-rejection mechanism) are wired onto the mounted
+    // detector. The full behavioral matrix lives in gesture.spec.ts.
+    const manual = detectorFiber?.memoizedProps.gesture as unknown as GestureInternals;
+    expect(typeof manual.handlers.onTouchesDown).toBe('function');
+    expect(typeof manual.handlers.onTouchesMove).toBe('function');
+    expect(typeof manual.handlers.onTouchesUp).toBe('function');
   });
 });
 

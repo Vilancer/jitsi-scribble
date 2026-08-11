@@ -9,25 +9,76 @@ import {
   useLocalStrokeGesture,
 } from './gesture.js';
 
-/** gesture-handler's own gesture objects store their configuration and
- * worklet callbacks on internal, untyped `config`/`handlers` bags
- * (RESEARCH.md Pattern 3's own documented seam — `pan.handlers.onX` is
- * directly callable under test). This narrow local shape avoids reaching
- * for `any` to access them. */
+/** gesture-handler's gesture objects store their configuration and worklet
+ * callbacks on internal, untyped `config`/`handlers` bags (RESEARCH.md
+ * Pattern 3's documented seam — `gesture.handlers.onX` is directly callable
+ * under test). This narrow local shape avoids reaching for `any`. */
+interface TouchPoint {
+  id: number;
+  x: number;
+  y: number;
+}
+interface TouchEventPayload {
+  changedTouches: TouchPoint[];
+  numberOfTouches: number;
+}
+interface FakeStateManager {
+  begin: jest.Mock;
+  activate: jest.Mock;
+  end: jest.Mock;
+  fail: jest.Mock;
+}
 interface GestureInternals {
-  config: { maxPointers?: number };
   handlers: {
-    onBegin: (e: { x: number; y: number }) => void;
-    onUpdate: (e: { x: number; y: number }) => void;
-    onEnd: (e: { x: number; y: number }) => void;
+    onTouchesDown: (e: TouchEventPayload, mgr: FakeStateManager) => void;
+    onTouchesMove: (e: TouchEventPayload, mgr: FakeStateManager) => void;
+    onTouchesUp: (e: TouchEventPayload, mgr: FakeStateManager) => void;
+    onTouchesCancelled: (e: TouchEventPayload, mgr: FakeStateManager) => void;
   };
 }
 
-// DRAW-08's own static assertion: this file's only mutable state is
-// Reanimated SharedValues — never a React `useState`/`useReducer` call of
-// any kind. Read the raw source rather than importing React internals,
-// since the thing under test is "this file never calls the hook", not any
-// runtime behavior a mounted component could exhibit.
+function mgr(): FakeStateManager {
+  return {
+    begin: jest.fn(),
+    activate: jest.fn(),
+    end: jest.fn(),
+    fail: jest.fn(),
+  };
+}
+
+function touch(id: number, x: number, y: number): TouchPoint {
+  return { id, x, y };
+}
+
+interface CapturedCalls {
+  begins: Array<[number, number]>;
+  samples: Array<[number, number]>;
+  ends: Array<'tap' | 'stroke'>;
+}
+
+async function renderGesture(): Promise<{
+  handlers: GestureInternals['handlers'];
+  calls: CapturedCalls;
+  gesture: () => unknown;
+}> {
+  const calls: CapturedCalls = { begins: [], samples: [], ends: [] };
+  const { result } = await renderHook(() =>
+    useLocalStrokeGesture({
+      onLocalBegin: (x, y) => calls.begins.push([x, y]),
+      onLocalSample: (x, y) => calls.samples.push([x, y]),
+      onLocalEnd: (kind) => calls.ends.push(kind),
+    }),
+  );
+  return {
+    handlers: (result.current.gesture as unknown as GestureInternals)
+      .handlers,
+    calls,
+    gesture: () => result.current.gesture,
+  };
+}
+
+// DRAW-08's static assertion: this file's only mutable state is Reanimated
+// SharedValues — never a React `useState`/`useReducer` call of any kind.
 describe('gesture.ts — no React component-state hook (DRAW-08)', () => {
   it('contains zero calls to useState or useReducer', () => {
     const source = readFileSync(join(__dirname, 'gesture.ts'), 'utf8');
@@ -36,19 +87,12 @@ describe('gesture.ts — no React component-state hook (DRAW-08)', () => {
   });
 });
 
-// The hot-path worklet logic (DRAW-01/03/08) extracted into zero-import,
-// 'worklet'-directive pure functions (mirroring gestureClassifier.ts's own
-// established pattern) — exercised directly as plain JS functions, with no
-// react-native-gesture-handler/react-native-reanimated native module needed
-// at all. This is the "exercise the worklet functions as plain JS
-// functions" case this task's own plan text anticipates, resolved without
-// needing to defer anything to Plan 05-04.
 describe('gesture.ts — path-string append-only construction (DRAW-01/08)', () => {
-  it('onBegin is a single assignment: "M x y", not a concatenation', () => {
+  it('stroke start is a single assignment: "M x y", not a concatenation', () => {
     expect(buildInitialPathSegment(10, 20)).toBe('M 10 20');
   });
 
-  it('a sequence of three onUpdate-equivalent appends produces exactly three " L" segments plus the initial "M"', () => {
+  it('a sequence of three appends produces exactly three " L" segments plus the initial "M"', () => {
     let path = buildInitialPathSegment(0, 0);
     path = appendPathSegment(path, 1, 1);
     path = appendPathSegment(path, 2, 2);
@@ -69,19 +113,55 @@ describe('gesture.ts — path-string append-only construction (DRAW-01/08)', () 
   });
 });
 
-// The composed hook itself — proven callable end to end (onBegin -> onUpdate
-// x3 -> onEnd) via the package's manual react-native-reanimated Jest mock
-// (__mocks__/react-native-reanimated.js), which sidesteps the real
-// package's native-module-eager-init throw under Jest without needing to
-// defer this assertion to Plan 05-04.
-//
-// Exercised via `renderHook` (not a bare direct call) because the mock's
-// `useSharedValue` now depends on a real `useRef` (05-REVIEW.md CR-03/WR-02
-// fix, to make it render-stable like the real Reanimated contract) — `useRef`
-// requires an active React dispatcher, which only `renderHook`/`render`
-// provide.
-describe('useLocalStrokeGesture — composed worklet callbacks (DRAW-01/03/05/08)', () => {
-  it('maxPointers(1) is configured on the returned pan gesture (DRAW-05)', async () => {
+// The composed hook — driven through the Manual gesture's touch handlers
+// exactly as gesture-handler would drive them, with a fake state manager.
+// These scenarios mirror the on-device UAT findings that forced the rewrite
+// (05-UAT.md tests 2 and 3): taps must actually classify as taps, and a
+// pointer that lands FIRST but never moves must never own the stroke.
+describe('useLocalStrokeGesture — Manual per-pointer event model (DRAW-01/03/05/08)', () => {
+  it('a drag begins at its DOWN position once movement crosses the 8dp slop, samples from there, and ends as a stroke', async () => {
+    const { handlers, calls } = await renderGesture();
+    const m = mgr();
+
+    handlers.onTouchesDown(
+      { changedTouches: [touch(1, 0, 0)], numberOfTouches: 1 },
+      m,
+    );
+    expect(m.begin).toHaveBeenCalledTimes(1);
+
+    // Sub-slop wiggle: nothing begins yet.
+    handlers.onTouchesMove(
+      { changedTouches: [touch(1, 3, 3)], numberOfTouches: 1 },
+      m,
+    );
+    expect(calls.begins).toHaveLength(0);
+    expect(m.activate).not.toHaveBeenCalled();
+
+    // Crosses the slop: stroke begins at the ORIGINAL down position.
+    handlers.onTouchesMove(
+      { changedTouches: [touch(1, 10, 10)], numberOfTouches: 1 },
+      m,
+    );
+    expect(m.activate).toHaveBeenCalledTimes(1);
+    expect(calls.begins).toEqual([[0, 0]]);
+    expect(calls.samples).toEqual([[10, 10]]);
+
+    handlers.onTouchesMove(
+      { changedTouches: [touch(1, 20, 20)], numberOfTouches: 1 },
+      m,
+    );
+    handlers.onTouchesUp(
+      { changedTouches: [touch(1, 20, 20)], numberOfTouches: 0 },
+      m,
+    );
+
+    expect(calls.ends).toEqual(['stroke']);
+    expect(m.end).toHaveBeenCalledTimes(1);
+  });
+
+  it("the drag's pathString starts at the down position and appends each sample (CR-03's UI-thread d source)", async () => {
+    const { handlers } = await renderGesture();
+    const m = mgr();
     const { result } = await renderHook(() =>
       useLocalStrokeGesture({
         onLocalBegin: () => {},
@@ -89,50 +169,163 @@ describe('useLocalStrokeGesture — composed worklet callbacks (DRAW-01/03/05/08
         onLocalEnd: () => {},
       }),
     );
+    const h = (result.current.gesture as unknown as GestureInternals)
+      .handlers;
 
-    expect(
-      (result.current.pan as unknown as GestureInternals).config.maxPointers,
-    ).toBe(1);
-  });
-
-  it('onBegin -> three onUpdate -> onEnd drives pathString append-only and classifies via classifyGesture', async () => {
-    const samples: Array<[number, number]> = [];
-    let began: [number, number] | undefined;
-    let endedKind: 'tap' | 'stroke' | undefined;
-
-    const { result } = await renderHook(() =>
-      useLocalStrokeGesture({
-        onLocalBegin: (x, y) => {
-          began = [x, y];
-        },
-        onLocalSample: (x, y) => {
-          samples.push([x, y]);
-        },
-        onLocalEnd: (kind) => {
-          endedKind = kind;
-        },
-      }),
+    h.onTouchesDown(
+      { changedTouches: [touch(1, 0, 0)], numberOfTouches: 1 },
+      m,
+    );
+    h.onTouchesMove(
+      { changedTouches: [touch(1, 10, 0)], numberOfTouches: 1 },
+      m,
+    );
+    h.onTouchesMove(
+      { changedTouches: [touch(1, 20, 5)], numberOfTouches: 1 },
+      m,
     );
 
-    const handlers = (result.current.pan as unknown as GestureInternals)
-      .handlers;
-    handlers.onBegin({ x: 0, y: 0 });
-    handlers.onUpdate({ x: 1, y: 1 });
-    handlers.onUpdate({ x: 2, y: 2 });
-    handlers.onUpdate({ x: 50, y: 50 }); // far enough + (via the real clock) slow enough to classify as a stroke
-    handlers.onEnd({ x: 50, y: 50 });
-
-    expect(began).toEqual([0, 0]);
-    expect(samples).toEqual([
-      [1, 1],
-      [2, 2],
-      [50, 50],
-    ]);
-    expect(result.current.pathString.value).toBe('M 0 0 L 1 1 L 2 2 L 50 50');
-    expect(endedKind).toBe('stroke'); // totalDistance (~70.7) >= 8dp threshold
+    expect(result.current.pathString.value).toBe('M 0 0 L 10 0 L 20 5');
+    void handlers; // silence unused from the shared helper
   });
 
-  it('the returned pan object keeps its identity across re-renders when the callback identities are stable (05-REVIEW.md WR-02)', async () => {
+  it('a quick still tap emits a begin+end("tap") pair at its down position (UAT-2 regression)', async () => {
+    const { handlers, calls } = await renderGesture();
+    const m = mgr();
+
+    handlers.onTouchesDown(
+      { changedTouches: [touch(1, 40, 50)], numberOfTouches: 1 },
+      m,
+    );
+    // Lift immediately (same tick → elapsed ~0ms, distance ~1dp).
+    handlers.onTouchesUp(
+      { changedTouches: [touch(1, 41, 50)], numberOfTouches: 0 },
+      m,
+    );
+
+    expect(calls.begins).toEqual([[40, 50]]);
+    expect(calls.ends).toEqual(['tap']);
+    expect(m.end).toHaveBeenCalledTimes(1);
+  });
+
+  it('a stationary long press (resting thumb lifting) emits NOTHING (UAT-3 palm case)', async () => {
+    const { handlers, calls } = await renderGesture();
+    const m = mgr();
+
+    handlers.onTouchesDown(
+      { changedTouches: [touch(1, 5, 300)], numberOfTouches: 1 },
+      m,
+    );
+    // Rest longer than the 150ms tap window, without moving.
+    await new Promise((resolve) => setTimeout(resolve, 170));
+    handlers.onTouchesUp(
+      { changedTouches: [touch(1, 6, 300)], numberOfTouches: 0 },
+      m,
+    );
+
+    expect(calls.begins).toHaveLength(0);
+    expect(calls.ends).toHaveLength(0);
+    expect(m.end).toHaveBeenCalledTimes(1);
+  });
+
+  it('a thumb resting FIRST never owns the stroke: the finger that moves draws, the thumb is ignored (UAT-3 regression)', async () => {
+    const { handlers, calls } = await renderGesture();
+    const m = mgr();
+
+    // Thumb lands first and stays still.
+    handlers.onTouchesDown(
+      { changedTouches: [touch(1, 5, 300)], numberOfTouches: 1 },
+      m,
+    );
+    // Drawing finger lands second.
+    handlers.onTouchesDown(
+      { changedTouches: [touch(2, 100, 100)], numberOfTouches: 2 },
+      m,
+    );
+    // Finger moves past the slop: IT becomes the stroke pointer.
+    handlers.onTouchesMove(
+      { changedTouches: [touch(2, 115, 100)], numberOfTouches: 2 },
+      m,
+    );
+    expect(calls.begins).toEqual([[100, 100]]);
+
+    // Thumb micro-jitter mid-stroke: ignored entirely.
+    handlers.onTouchesMove(
+      { changedTouches: [touch(1, 6, 301)], numberOfTouches: 2 },
+      m,
+    );
+    expect(calls.samples).toEqual([[115, 100]]);
+
+    // Thumb lifts while the stroke is in flight: ignored (never a tap).
+    handlers.onTouchesUp(
+      { changedTouches: [touch(1, 6, 301)], numberOfTouches: 1 },
+      m,
+    );
+    expect(calls.ends).toHaveLength(0);
+
+    // Finger lifts: exactly one stroke ends.
+    handlers.onTouchesUp(
+      { changedTouches: [touch(2, 130, 100)], numberOfTouches: 0 },
+      m,
+    );
+    expect(calls.ends).toEqual(['stroke']);
+  });
+
+  it('a second pointer landing AFTER the stroke started is ignored for the stroke\'s duration (DRAW-05 original wording)', async () => {
+    const { handlers, calls } = await renderGesture();
+    const m = mgr();
+
+    handlers.onTouchesDown(
+      { changedTouches: [touch(1, 0, 0)], numberOfTouches: 1 },
+      m,
+    );
+    handlers.onTouchesMove(
+      { changedTouches: [touch(1, 12, 0)], numberOfTouches: 1 },
+      m,
+    );
+    expect(calls.begins).toHaveLength(1);
+
+    // Palm lands mid-stroke and even moves past the slop: still ignored.
+    handlers.onTouchesDown(
+      { changedTouches: [touch(2, 200, 200)], numberOfTouches: 2 },
+      m,
+    );
+    handlers.onTouchesMove(
+      { changedTouches: [touch(2, 220, 220)], numberOfTouches: 2 },
+      m,
+    );
+    expect(calls.begins).toHaveLength(1);
+    expect(calls.samples).toEqual([[12, 0]]);
+
+    handlers.onTouchesUp(
+      { changedTouches: [touch(1, 12, 0)], numberOfTouches: 1 },
+      m,
+    );
+    expect(calls.ends).toEqual(['stroke']);
+  });
+
+  it('cancellation closes an in-flight stroke so the store fade lifecycle still runs', async () => {
+    const { handlers, calls } = await renderGesture();
+    const m = mgr();
+
+    handlers.onTouchesDown(
+      { changedTouches: [touch(1, 0, 0)], numberOfTouches: 1 },
+      m,
+    );
+    handlers.onTouchesMove(
+      { changedTouches: [touch(1, 15, 0)], numberOfTouches: 1 },
+      m,
+    );
+    handlers.onTouchesCancelled(
+      { changedTouches: [touch(1, 15, 0)], numberOfTouches: 0 },
+      m,
+    );
+
+    expect(calls.ends).toEqual(['stroke']);
+    expect(m.fail).toHaveBeenCalledTimes(1);
+  });
+
+  it('the returned gesture object keeps its identity across re-renders when the callback identities are stable (05-REVIEW.md WR-02)', async () => {
     const callbacks = {
       onLocalBegin: () => {},
       onLocalSample: () => {},
@@ -141,19 +334,15 @@ describe('useLocalStrokeGesture — composed worklet callbacks (DRAW-01/03/05/08
 
     const { result, rerender } = await renderHook(
       (props: typeof callbacks) => useLocalStrokeGesture(props),
-      {
-        initialProps: callbacks,
-      },
+      { initialProps: callbacks },
     );
 
-    const firstPan = result.current.pan;
-    await rerender(callbacks); // same callback identities — simulates a touch-sample-driven re-render
-    const secondPan = result.current.pan;
-
-    expect(secondPan).toBe(firstPan);
+    const first = result.current.gesture;
+    await rerender(callbacks);
+    expect(result.current.gesture).toBe(first);
   });
 
-  it('the returned pan object is reconstructed when a callback identity changes', async () => {
+  it('the returned gesture object is reconstructed when a callback identity changes', async () => {
     const { result, rerender } = await renderHook(
       (props: { onLocalBegin: () => void }) =>
         useLocalStrokeGesture({
@@ -164,10 +353,8 @@ describe('useLocalStrokeGesture — composed worklet callbacks (DRAW-01/03/05/08
       { initialProps: { onLocalBegin: () => {} } },
     );
 
-    const firstPan = result.current.pan;
-    await rerender({ onLocalBegin: () => {} }); // a NEW function identity
-    const secondPan = result.current.pan;
-
-    expect(secondPan).not.toBe(firstPan);
+    const first = result.current.gesture;
+    await rerender({ onLocalBegin: () => {} });
+    expect(result.current.gesture).not.toBe(first);
   });
 });

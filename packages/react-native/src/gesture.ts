@@ -1,77 +1,88 @@
 // DRAW-01/03/05/08's local-echo touch-capture worklet
 // (.planning/phases/05-react-native-overlay/05-RESEARCH.md Patterns 1-3).
-// A single `Gesture.Pan().maxPointers(1)` — never a composed `Gesture.Tap()`
-// — builds an SVG path `d` string on the UI thread by append-only mutation
-// of a `SharedValue<string>`, classifies tap-vs-drag once, at `onEnd`, via
-// Plan 05-01's `classifyGesture`, and bridges every sample to the JS thread
-// via `runOnJS` without ever blocking the UI thread's own paint (DRAW-01).
 //
-// DRAW-08's hot-path anti-patterns this file is provably free of:
+// REWRITTEN after Phase 5's on-device UAT (05-UAT.md tests 2 and 3 FAILED on
+// the original single `Gesture.Pan().maxPointers(1)` implementation) — two
+// real-device findings the synthetic gesture-event tests could not surface:
+//
+//   UAT-2 (taps): `Gesture.Pan()`'s default activation distance (~10dp) sits
+//   ABOVE classifyGesture's 8dp tap threshold, so the `'tap'` branch was
+//   unreachable on hardware: a clean tap never activated the pan (no onEnd —
+//   no ring, no anything), while any gesture that DID activate had already
+//   travelled >=10dp and always classified 'stroke' (taps with finger jitter
+//   became tiny lines).
+//
+//   UAT-3 (palm): `maxPointers(1)` hands the gesture to whichever pointer
+//   lands FIRST. DRAW-05's wording only covered a thumb arriving AFTER the
+//   drawing finger — but a phone held naturally has the thumb resting on the
+//   screen edge BEFORE drawing starts, so the thumb owned the gesture and
+//   the drawing finger was ignored entirely.
+//
+// The fix is a single `Gesture.Manual()` with explicit per-pointer tracking:
+//
+//   - Every pointer that lands becomes a CANDIDATE (its down position/time
+//     recorded). Nothing is drawn on touch-down.
+//   - The first candidate to travel >= ACTIVATION_SLOP_DP (8dp — deliberately
+//     the same figure as classifyGesture's tap threshold, so "activated" and
+//     "classifies as stroke" are the same predicate) becomes THE stroke
+//     pointer; the stroke begins at its ORIGINAL down position so no ink is
+//     lost. A resting thumb never moves that far, so it can never win —
+//     regardless of landing order. This is DRAW-05's palm rejection,
+//     implemented by movement rather than by arrival order.
+//   - A candidate that lifts without activating classifies via
+//     classifyGesture: 'tap' (quick, still) emits a begin+end('tap') pair at
+//     its down position; 'stroke' here can only mean the stationary-long-
+//     press case (distance <8dp by construction, elapsed >=150ms) — i.e. a
+//     resting thumb lifting — and is SUPPRESSED entirely (deliberate
+//     deviation: emitting an invisible one-point stroke would also cross the
+//     wire for no reason; a palm's lift must produce nothing).
+//   - A candidate lifting while another pointer's stroke is in flight is
+//     ignored (DRAW-05: extra pointers are ignored for the stroke's
+//     duration) — this also protects ScribbleOverlay's single
+//     currentLocalIdRef from being clobbered mid-drag by a tap emission.
+//
+// DRAW-08's hot-path anti-patterns this file remains provably free of:
 //   1. No React state update per sample — the only mutable state below is
 //      Reanimated SharedValues (see gesture.spec.ts's static assertion).
-//   2. No path-string REBUILD per sample — `onBegin` performs exactly one
-//      assignment (`buildInitialPathSegment`); `onUpdate` performs exactly
-//      one append (`appendPathSegment`), never re-deriving the whole string
-//      from an array of points.
-//   3. No per-sample points array of ANY kind (growing or fixed-capacity) —
-//      this file used to also maintain a `pointsRing`/`ringWriteIndex`
-//      fixed-capacity ring buffer here, written on every sample; 05-REVIEW.md
-//      WR-01 found it had no consumer anywhere in the package (dead
-//      per-sample UI-thread work) and it was removed outright rather than
-//      wired up, once 05-REVIEW.md CR-03's fix confirmed `pathString` alone
-//      is sufficient for rendering the in-progress local stroke.
-//      `protocol/core`'s `StrokeStore` keeps the canonical, capped points
-//      array on the JS thread (its own `MAX_POINTS_PER_STROKE`, Phase 3) —
-//      unrelated to and unaffected by this file.
+//   2. No path-string REBUILD per sample — stroke selection performs exactly
+//      one assignment (`buildInitialPathSegment` + one append); each
+//      subsequent move performs exactly one append (`appendPathSegment`),
+//      never re-deriving the whole string.
+//   3. No per-sample allocation: the candidates record is REASSIGNED only on
+//      touch-down/up/cancel (per-gesture-lifecycle events, not per sample);
+//      onTouchesMove only READS it until the one-time stroke selection.
 //
-// 05-REVIEW.md CR-03 (this file's own `pathString` is now actually consumed):
-// `ScribbleOverlay.tsx` renders the actively-dragging local stroke's `d` by
-// reading `pathString.value` directly via `useAnimatedProps`, never by
-// rebuilding it from `stroke.points` the way every other (remote, or
-// already-ended local) stroke's `d` is computed — see
-// `ScribbleOverlay.tsx`'s `LocalActiveStrokePath`. This is what makes the
-// UI-thread work this file does non-redundant.
+// 05-REVIEW.md CR-03 (unchanged): `ScribbleOverlay.tsx` renders the actively-
+// dragging local stroke's `d` by reading `pathString.value` directly via
+// `useAnimatedProps` — see `LocalActiveStrokePath`.
 //
-// 05-REVIEW.md WR-02: `pan` is memoized via `useMemo`, keyed on the three
-// callback identities, so `<GestureDetector gesture={pan}>` receives a
-// referentially stable gesture object across re-renders — including the
-// touch-sample-driven re-renders of `ScribbleOverlay` that CR-03's fix does
-// NOT eliminate (those are driven by `protocol/core`'s own
-// `StrokeStore.appendLocal()` calling `notify()` unconditionally on every
-// sample, a Phase 3 behavior out of this file's/this phase's scope to
-// change). `useSharedValue`'s own contract already guarantees the
-// SharedValues closed over below (`pathString`/`startX`/`startY`/
-// `startTimeMs`) stay the SAME objects across renders, so memoizing only the
-// `Gesture.Pan()` construction is sufficient and correct.
-//
-// `buildInitialPathSegment`/`appendPathSegment` are pulled out as their own
-// zero-import, `'worklet'`-directive pure functions — mirroring
-// `gestureClassifier.ts`'s established pattern (05-PATTERNS.md
-// "Worklet-safe pure function extraction") — so this file's core hot-path
-// logic is unit-testable as plain JS functions without needing
-// `react-native-gesture-handler`/`react-native-reanimated`'s native modules
-// at all (see gesture.spec.ts).
+// 05-REVIEW.md WR-02 (unchanged): the gesture object is memoized on the three
+// callback identities so `<GestureDetector gesture={...}>` receives a
+// referentially stable object across re-renders.
 import { useMemo } from 'react';
 import { Gesture } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue } from 'react-native-reanimated';
 
 import { classifyGesture } from './gestureClassifier.js';
 
-/** onBegin: ONE assignment, never a concatenation — the "starting from
- * nothing" case is handled distinctly from every subsequent append
- * (DRAW-08). Zero imports, `'worklet'` as this function body's own first
- * statement, so Reanimated's babel plugin can workletize it across the
- * import boundary from gesture.ts's worklet callbacks. */
+/** DRAW-03's locked 8dp figure, reused as the stroke-activation slop so
+ * "moved enough to activate" and "classifies as a stroke" are one predicate
+ * (see the header comment). Duplicated from classifyGesture's own literal on
+ * purpose — that function is a zero-import worklet by design, and importing
+ * a shared constant across the worklet boundary is exactly the kind of
+ * babel-plugin-dependent subtlety this file avoids. */
+const ACTIVATION_SLOP_DP = 8;
+
+/** onBegin-equivalent: ONE assignment, never a concatenation (DRAW-08).
+ * Zero imports, `'worklet'` first statement — workletizable across the
+ * import boundary. */
 export function buildInitialPathSegment(x: number, y: number): string {
   'worklet';
   return `M ${x} ${y}`;
 }
 
-/** onUpdate: appends exactly one ' L x y' segment per call — an append, not
- * a rebuild. Two consecutive samples at the exact same (x, y) still append a
- * single segment; this function never special-cases duplicate points
- * (DRAW-08 forbids adding per-sample work of any kind, including
- * deduplication). */
+/** Appends exactly one ' L x y' segment per call — an append, not a rebuild.
+ * Never special-cases duplicate points (DRAW-08). */
 export function appendPathSegment(
   current: string,
   x: number,
@@ -81,91 +92,190 @@ export function appendPathSegment(
   return current + ` L ${x} ${y}`;
 }
 
+interface CandidateRecord {
+  x: number;
+  y: number;
+  t: number;
+}
+
 export interface LocalStrokeGestureCallbacks {
-  /** Called once, from onBegin, with the stroke's first raw (x, y) sample
+  /** Called once per stroke/tap, with the pointer's DOWN-position sample
    * (overlay-view pixel coordinates — normalization against the content
    * rect is the JS-side caller's job, not this file's). */
   onLocalBegin: (x: number, y: number) => void;
-  /** Called once per onUpdate, with the same raw (x, y) sample this
-   * worklet just appended to `pathString`. */
+  /** Called once per movement sample of the active stroke pointer. */
   onLocalSample: (x: number, y: number) => void;
-  /** Called once, from onEnd, with DRAW-03's tap/drag classification —
-   * D-01's discriminant that later reaches the wire via
+  /** Called once per stroke/tap, with DRAW-03's classification — D-01's
+   * discriminant that later reaches the wire via
    * `StrokeStore.endLocal(id, kind)`. */
   onLocalEnd: (kind: 'tap' | 'stroke') => void;
 }
 
 export interface LocalStrokeGestureHandle {
-  /** The configured `Gesture.Pan().maxPointers(1)` object, memoized (05-
-   * REVIEW.md WR-02) so its identity stays stable across re-renders as long
-   * as `callbacks`' own three function identities do — pass this directly to
-   * `<GestureDetector gesture={pan}>` (Plan 05-04). */
-  pan: ReturnType<typeof Gesture.Pan>;
+  /** The configured `Gesture.Manual()` object, memoized (05-REVIEW.md WR-02)
+   * so its identity stays stable across re-renders as long as `callbacks`'
+   * three function identities do — pass directly to
+   * `<GestureDetector gesture={gesture}>`. */
+  gesture: ReturnType<typeof Gesture.Manual>;
   /** The append-only SVG path `d` string, read directly via
    * `useAnimatedProps` by `ScribbleOverlay.tsx`'s `LocalActiveStrokePath`
-   * (05-REVIEW.md CR-03) for the actively-dragging local stroke only —
-   * entirely on the UI thread, never crossing to JS for rendering (DRAW-01).
-   * This is a Reanimated `SharedValue<string>`; `{ value: string }` is its
+   * (05-REVIEW.md CR-03) for the actively-dragging local stroke only. A
+   * Reanimated `SharedValue<string>`; `{ value: string }` is its
    * externally-visible read shape. */
   pathString: { value: string };
 }
 
+/** The minimal slice of gesture-handler's touch payload this file reads —
+ * kept structural so the worklets below never depend on fields the Jest
+ * fakes would have to reproduce. */
+interface TouchPoint {
+  id: number;
+  x: number;
+  y: number;
+}
+interface TouchEventPayload {
+  changedTouches: TouchPoint[];
+  numberOfTouches: number;
+}
+interface ManualStateManager {
+  begin: () => void;
+  activate: () => void;
+  end: () => void;
+  fail: () => void;
+}
+
 /**
- * DRAW-05's single-pointer discipline (`maxPointers(1)`) plus DRAW-01/03/08's
- * local-echo worklet, composed into one hook. Every worklet callback below
- * delegates its hot-path math to the zero-import pure functions above and to
- * `gestureClassifier.ts`'s `classifyGesture` (Plan 05-01) — this hook's own
- * job is only wiring: capture start position/time at `onBegin`, mutate
- * `pathString` at `onUpdate`, classify at `onEnd`, and bridge every one of
- * those moments to the JS thread via `runOnJS` (Pattern 2 — `runOnJS`
- * schedules the JS-thread call without blocking this worklet's own UI-thread
- * paint).
+ * DRAW-05's palm rejection (movement-based pointer selection, not
+ * arrival-order) plus DRAW-01/03/08's local-echo worklet, composed into one
+ * hook — see the header comment for the full event model and the on-device
+ * UAT failures that shaped it.
  */
 export function useLocalStrokeGesture(
   callbacks: LocalStrokeGestureCallbacks,
 ): LocalStrokeGestureHandle {
   const pathString = useSharedValue('');
-  const startX = useSharedValue(0);
-  const startY = useSharedValue(0);
-  const startTimeMs = useSharedValue(0);
+  /** Pointer id of the active stroke pointer; -1 when none. */
+  const activePointerId = useSharedValue(-1);
+  /** Down position/time per still-candidate pointer id. Reassigned (never
+   * mutated in place) on down/up/cancel only. */
+  const candidates = useSharedValue<Record<number, CandidateRecord>>({});
 
-  // 05-REVIEW.md WR-02: memoized on the three callback identities, not
-  // reconstructed every render. `useSharedValue`'s own contract keeps
-  // pathString/startX/startY/startTimeMs referentially stable across
-  // renders regardless of whether this memo re-runs, so capturing them in a
-  // closure that is itself created only once (per stable callback identity)
-  // is safe.
-  const pan = useMemo(
+  const gesture = useMemo(
     () =>
-      Gesture.Pan()
-        .maxPointers(1) // DRAW-05
-        .onBegin((e) => {
-          startX.value = e.x;
-          startY.value = e.y;
-          startTimeMs.value = performance.now(); // worklet-safe per Reanimated's own docs
-          pathString.value = buildInitialPathSegment(e.x, e.y);
-          runOnJS(callbacks.onLocalBegin)(e.x, e.y);
+      Gesture.Manual()
+        .onTouchesDown((e: TouchEventPayload, mgr: ManualStateManager) => {
+          'worklet';
+          if (e.numberOfTouches === e.changedTouches.length) {
+            // First contact of this gesture — enter BEGAN so the handler
+            // owns the interaction until every pointer lifts.
+            mgr.begin();
+          }
+          const next: Record<number, CandidateRecord> = {
+            ...candidates.value,
+          };
+          for (const touch of e.changedTouches) {
+            next[touch.id] = { x: touch.x, y: touch.y, t: performance.now() };
+          }
+          candidates.value = next;
         })
-        .onUpdate((e) => {
-          pathString.value = appendPathSegment(pathString.value, e.x, e.y);
-          runOnJS(callbacks.onLocalSample)(e.x, e.y);
+        .onTouchesMove((e: TouchEventPayload, mgr: ManualStateManager) => {
+          'worklet';
+          if (activePointerId.value !== -1) {
+            // A stroke is in flight: append samples from ITS moves only;
+            // every other pointer's movement is ignored (DRAW-05).
+            for (const touch of e.changedTouches) {
+              if (touch.id === activePointerId.value) {
+                pathString.value = appendPathSegment(
+                  pathString.value,
+                  touch.x,
+                  touch.y,
+                );
+                runOnJS(callbacks.onLocalSample)(touch.x, touch.y);
+              }
+            }
+            return;
+          }
+          // No stroke in flight: the first candidate to travel >=
+          // ACTIVATION_SLOP_DP from its own down position becomes the
+          // stroke pointer. A resting thumb never gets here.
+          for (const touch of e.changedTouches) {
+            const start = candidates.value[touch.id];
+            if (start === undefined) continue;
+            const moved = Math.hypot(touch.x - start.x, touch.y - start.y);
+            if (moved >= ACTIVATION_SLOP_DP) {
+              activePointerId.value = touch.id;
+              // Begin at the ORIGINAL down position so the stroke's first
+              // 8dp are not lost, then append the current sample.
+              pathString.value = appendPathSegment(
+                buildInitialPathSegment(start.x, start.y),
+                touch.x,
+                touch.y,
+              );
+              mgr.activate();
+              runOnJS(callbacks.onLocalBegin)(start.x, start.y);
+              runOnJS(callbacks.onLocalSample)(touch.x, touch.y);
+              break;
+            }
+          }
         })
-        .onEnd((e) => {
-          const totalDistance = Math.hypot(
-            e.x - startX.value,
-            e.y - startY.value,
-          );
-          const elapsed = performance.now() - startTimeMs.value;
-          // DRAW-03: classified once, on lift, by calling Plan 05-01's
-          // classifyGesture directly inside this worklet — legal only because
-          // gestureClassifier.ts's own 'worklet' directive makes it
-          // workletizable across this import boundary (if a future edit drops
-          // that directive, this call fails at runtime, not at typecheck).
-          const kind = classifyGesture(totalDistance, elapsed);
-          runOnJS(callbacks.onLocalEnd)(kind);
-        }),
+        .onTouchesUp((e: TouchEventPayload, mgr: ManualStateManager) => {
+          'worklet';
+          const next: Record<number, CandidateRecord> = {
+            ...candidates.value,
+          };
+          for (const touch of e.changedTouches) {
+            const start = next[touch.id];
+            delete next[touch.id];
+            if (touch.id === activePointerId.value) {
+              // The active stroke pointer lifted: an activated pointer moved
+              // >= 8dp by construction, so this is always a stroke.
+              activePointerId.value = -1;
+              runOnJS(callbacks.onLocalEnd)('stroke');
+              continue;
+            }
+            if (start === undefined) continue;
+            if (activePointerId.value !== -1) {
+              // Extra pointer lifting while a stroke is in flight — ignored
+              // for the stroke's duration (DRAW-05), and never allowed to
+              // clobber ScribbleOverlay's single in-flight local stroke id.
+              continue;
+            }
+            const moved = Math.hypot(touch.x - start.x, touch.y - start.y);
+            const elapsed = performance.now() - start.t;
+            // DRAW-03: classified once, on lift. 'tap' emits a begin+end
+            // pair at the down position. 'stroke' here can only be the
+            // stationary-long-press (resting thumb/palm) case — suppressed
+            // entirely, see the header comment.
+            if (classifyGesture(moved, elapsed) === 'tap') {
+              // Reset pathString first so any interim render of the
+              // one-frame activeLocalId window shows a single point, never
+              // the PREVIOUS stroke's stale path.
+              pathString.value = buildInitialPathSegment(start.x, start.y);
+              runOnJS(callbacks.onLocalBegin)(start.x, start.y);
+              runOnJS(callbacks.onLocalEnd)('tap');
+            }
+          }
+          candidates.value = next;
+          if (e.numberOfTouches === 0) {
+            mgr.end();
+          }
+        })
+        .onTouchesCancelled(
+          (e: TouchEventPayload, mgr: ManualStateManager) => {
+            'worklet';
+            if (activePointerId.value !== -1) {
+              // Close the in-flight stroke so the store's normal
+              // hold-then-fade lifecycle runs rather than leaving an
+              // un-ended stroke to the stale watchdog.
+              activePointerId.value = -1;
+              runOnJS(callbacks.onLocalEnd)('stroke');
+            }
+            candidates.value = {};
+            mgr.fail();
+          },
+        ),
     [callbacks.onLocalBegin, callbacks.onLocalSample, callbacks.onLocalEnd],
   );
 
-  return { pan, pathString };
+  return { gesture, pathString };
 }
