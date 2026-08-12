@@ -5,3 +5,5 @@ test-results/
 playwright-report/
 # Staging JWT secret for e2e auth — never commit (user rotates it out-of-band).
 .env.e2e
+# Generated portrait fake-camera fixture (see global-setup.ts) — raw y4m, never committed.
+tests/fixtures/portrait.y4m
