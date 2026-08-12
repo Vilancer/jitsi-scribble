@@ -61,7 +61,7 @@
       "build": {
         "executor": "nx:run-commands",
         "options": {
-          "command": "bob build",
+          "command": "rm -rf dist && bob build",
           "cwd": "packages/react-native"
         },
         "outputs": ["{projectRoot}/dist"]
