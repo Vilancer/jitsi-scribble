@@ -26,7 +26,15 @@
           "microphonePermission": "jitsi-scribble uses the microphone only if you turn it on in a call."
         }
       ],
-      "./plugins/withAndroidScreenShare"
+      "./plugins/withAndroidScreenShare",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
     ]
   }
 }
