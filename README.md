@@ -2,63 +2,115 @@
 
 [![CI](https://github.com/Vilancer/jitsi-scribble/actions/workflows/ci.yml/badge.svg)](https://github.com/Vilancer/jitsi-scribble/actions/workflows/ci.yml)
 
-FaceTime-style ephemeral touch annotation for Jitsi calls. One participant draws on what they
-see — primarily a **screen share** — and the other sees the stroke appear in real time and
-fade a few seconds later. It's deliberately not a persistent whiteboard.
+FaceTime-style drawing for video calls in React Native and Expo apps. During a call, one person
+draws on what they see (usually the other person's **screen share**). The stroke shows up on the
+other person's screen in real time and fades a few seconds later. It is a way to point at things,
+not a whiteboard.
 
-Ships as an Nx monorepo (React Native client, web/DOM renderer, shared protocol), published
-open source on npm, proven in production by Genius_Native's teacher↔student video sessions.
+- **In the app:** an ink layer over the call video and a drawing toolbar with pen, marker, pencil
+  and crayon, plus line, arrow, rectangle and ellipse, colours and sizes.
+- **Outside the app (Android):** a floating pen button that stays on screen while you share your
+  screen and use other apps. Tap it and the tools fan out around it. Draw over any app; whatever
+  the other side draws shows up there too. When you're not using it, it fades and tucks into the
+  screen edge.
+- **Call SDKs plug in as transport providers.** Jitsi (`lib-jitsi-meet`) is the first: strokes
+  ride the conference's own bridge data channel, so there's no extra server.
 
-**Core value:** during a live call, one person can point at a specific spot on the other
-person's screen and the other person actually sees where they mean — on Android, iOS, and in
-the session recording.
+## Packages
 
-## Status
-
-This project is under active development. Current state, package by package:
-
-| Package | npm | Status |
+| Package | What it is | Status |
 |---|---|---|
-| [`@vilancer/protocol`](packages/protocol) | [![npm](https://img.shields.io/npm/v/@vilancer/protocol)](https://www.npmjs.com/package/@vilancer/protocol) | **Published** (still at `0.0.1` — not yet re-published with Phase 3's additions below). Coordinate normalization, wire protocol schema/codec, transport, and a render-agnostic stroke-lifecycle store (start/move/end/clear, hold/fade timing, defensive caps, rate limiting, outbound move coalescing) — the shared foundation the client and web renderer build on. |
-| [`@vilancer/react-native`](packages/react-native) | — | Private, unpublished. Phase 5 shipped the real client: `<ScribbleOverlay>` (casing/core freehand strokes and tap-rings over `react-native-svg`, driven by `react-native-gesture-handler`'s single-pointer `Gesture.Pan()` and a `useAnimatedProps`-based fade, per `useScribbleSession`'s store) plus `useScribbleSession` (transport↔store orchestration, presence via `AppState`, D-04 host callbacks) sitting on top of Phase 4's shared render-policy math and a probing, never-throwing `fromJitsiConference` adapter parallel to the web package's own. Draw mode is a host-controlled prop that fully unmounts the gesture-capture surface when off (touches pass through untouched); a receiver can flip incoming annotations off instantly with a render-side filter, with no fade-out and no handshake. The local drawer's own ink dims to a fixed opacity while the other side's presence is unknown, so nobody draws into the void. A `MemoryTransport`-driven integration test proves one stroke crosses a simulated drawer/viewer pair end to end with no device, conference, or host app. Not yet integrated into a real host app or Genius_Native — that's Phase 6. |
-| [`@vilancer/web`](packages/web) (DOM renderer) | — | Private, unpublished. Real content shipped in Phase 4: a probing, never-throwing `fromJitsiConference` transport adapter over `lib-jitsi-meet`'s data channel, a resize-reactive SVG renderer mounted over jitsi-meet's `#largeVideo` (one remote stroke renders end to end, proven by a jsdom-based three-assertion smoke test matching ARCHITECTURE.md's real-deployment contract), and a fully-tested `try`/`catch`-wrapped bootstrap entry point (duplicate-injection guard, silent mount-failure isolation, identifiable startup log). `pnpm nx build web` produces both `dist/jitsi-scribble.js` (ES) and `dist/jitsi-scribble.iife.js` (IIFE) — the actual browser-injectable bundle. Deployment (the real `custom-config.js`/nginx mount, a real Jibri recording) is a later phase's job. |
-| `@jitsi-scribble/native-overlay` | — | Placeholder. Android out-of-app overlay (Expo module + config plugin) lands in a later phase. iOS gets a different, PiP-composited approach instead — see [Platform notes](#platform-notes). |
+| [`@vilancer/react-native`](packages/react-native) | `ScribbleProvider`, `ScribbleOverlay`, `ScribbleToolbar`, the `jitsi()` provider. Pure JS. | 0.1.0, not yet on npm |
+| [`@vilancer/native-overlay`](packages/native-overlay) | The floating out-of-app pen (Android Expo module). Optional. | 0.1.0, not yet on npm |
+| [`@vilancer/protocol`](packages/protocol) | Wire format, stroke store, geometry, shapes. Used by the other packages. | `0.0.1` on npm (0.1.0 not yet published) |
+| [`@vilancer/web`](packages/web) | Renders the ink on jitsi-meet web (and so in Jibri recordings). | private |
 
-Only `@vilancer/protocol` is published today; the other packages are private until their
-phases ship.
-
-## Install
+## Install (Expo)
 
 ```sh
-npm install @vilancer/protocol
+npx expo install react-native-svg react-native-gesture-handler react-native-reanimated react-native-worklets
+npm install @vilancer/react-native @vilancer/protocol
+# optional, Android: the floating pen outside the app
+npm install @vilancer/native-overlay
 ```
 
-Subpath imports, so you only pull in what you use:
+`@vilancer/native-overlay` contains native code, so it needs a development build
+(`npx expo run:android` or EAS), not Expo Go. It adds the `SYSTEM_ALERT_WINDOW` ("Display over
+other apps") permission to your app; the user grants it from system settings, which
+`requestPermission()` opens.
 
-```ts
-import { encode, decode } from '@vilancer/protocol/codec';
-import { contentRect, mapTouchToContent } from '@vilancer/protocol/geometry';
-import { MemoryTransport, createMemoryTransportPair } from '@vilancer/protocol/transport';
-import { StrokeStore } from '@vilancer/protocol/core';
-import type { StartFrame } from '@vilancer/protocol/schema';
+## Use
+
+```tsx
+import { useMemo, useState } from 'react';
+import { ScribbleOverlay, ScribbleProvider, ScribbleToolbar, jitsi, useScribble } from '@vilancer/react-native';
+import { useOutOfAppOverlay } from '@vilancer/native-overlay';
+
+function CallScreen({ conference }) {
+  // conference: the lib-jitsi-meet JitsiConference you joined
+  const transport = useMemo(() => (conference ? jitsi(conference) : undefined), [conference]);
+  return (
+    <ScribbleProvider transport={transport}>
+      <Stage />
+    </ScribbleProvider>
+  );
+}
+
+function Stage() {
+  const { drawing, setDrawing } = useScribble();
+  const [frameDims, setFrameDims] = useState();
+  // The floating pen while this phone shares its screen and the app is in the background.
+  const overlay = useOutOfAppOverlay({ enabled: isSharingScreen });
+
+  return (
+    <>
+      <View style={{ flex: 1 }}>
+        <RTCView
+          streamURL={remoteVideoURL}
+          objectFit="contain"
+          style={{ flex: 1 }}
+          onDimensionsChange={(e) => setFrameDims({ w: e.nativeEvent.width, h: e.nativeEvent.height })}
+        />
+        {/* a sibling of the video, same box; frameDims maps ink onto the letterboxed video */}
+        <ScribbleOverlay frameDims={frameDims} />
+      </View>
+      {drawing && <ScribbleToolbar />}
+      <Button title="Draw" onPress={() => setDrawing(!drawing)} />
+      {overlay.supported && !overlay.permitted && <Button title="Allow drawing over other apps" onPress={overlay.requestPermission} />}
+    </>
+  );
+}
 ```
 
-Don't import from the bare package root (`@vilancer/protocol`) on React Native unless you
-also need `/schema` — see [Privacy & platform notes](#privacy) for why.
+Pass `p2p: { enabled: false }` when you create the Jitsi conference. Annotation travels on the
+bridge's data channel, which a peer-to-peer call doesn't have.
 
-## Privacy
+### Other call SDKs
 
-Strokes are never persisted server-side. They're relayed peer-to-peer over the existing Jitsi
-conference data channel for the duration of the call and then gone — no whiteboard history, no
-server-side storage. If a transport outside the conference is ever added, it will be
-`wss://`/TLS only.
+A transport provider is any object implementing `ScribbleTransport` (`send`, `subscribe`,
+`localId`, `state`, `onStateChange`). Write one for your SDK's data channel and pass it to
+`<ScribbleProvider transport={...}>`; nothing else changes. `MemoryTransport` /
+`createMemoryTransportPair` are built in for tests and demos.
 
 ## Platform notes
 
-Android and iOS parity is the goal, but iOS can't match Android's system-wide overlay.
-Android uses a `SYSTEM_ALERT_WINDOW` overlay; iOS composites into the
-`AVPictureInPictureVideoCallViewController` that `RTCPIPView` already hosts. This asymmetry is
-a deliberate, documented product decision, not an oversight.
+- **Android** gets both the in-app layer and the floating pen over other apps.
+- **iOS** gets the in-app layer. An app can't draw over other apps on iOS; the floating pen isn't
+  available there (`useOutOfAppOverlay().supported` is `false`). This is a deliberate, documented
+  difference, not a gap that will be closed.
+- The floating layer is captured in the screen share by default, so the other side also sees ink
+  in the video. `hideInkFromScreenShare` / `hideControlsFromScreenShare` use `FLAG_SECURE`, which
+  on some devices blacks out the whole capture; test on your target devices before turning it on.
+
+## Privacy
+
+Strokes are never stored on any server. They travel over the call's own data channel while the
+call lasts and disappear after a few seconds.
+
+## Try it
+
+`apps/example` is an Expo app with a solo demo (a simulated participant draws with you) and a real
+Jitsi call with screen sharing. See [apps/example/README.md](apps/example/README.md).
 
 ## Development
 

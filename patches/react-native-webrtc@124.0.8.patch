@@ -1,0 +1,155 @@
+diff --git a/android/src/main/java/com/oney/WebRTCModule/GetUserMediaImpl.java b/android/src/main/java/com/oney/WebRTCModule/GetUserMediaImpl.java
+index e15cdb8..7fc5e1b 100644
+--- a/android/src/main/java/com/oney/WebRTCModule/GetUserMediaImpl.java
++++ b/android/src/main/java/com/oney/WebRTCModule/GetUserMediaImpl.java
+@@ -83,8 +83,16 @@ class GetUserMediaImpl {
+ 
+                     mediaProjectionPermissionResultData = data;
+ 
+-                    MediaProjectionService.launch(activity)
+-                        .orTimeout(10, TimeUnit.SECONDS)
++                    java.util.concurrent.CompletableFuture<Void> launchFuture =
++                        MediaProjectionService.launch(activity);
++                    // CompletableFuture.orTimeout() requires API 31 (Android 12). On older
++                    // devices calling it throws NoSuchMethodError and crashes screen share,
++                    // so only apply the safety timeout where the method exists; below API 31
++                    // the future still completes when the foreground service starts.
++                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
++                        launchFuture = launchFuture.orTimeout(10, TimeUnit.SECONDS);
++                    }
++                    launchFuture
+                         .whenCompleteAsync((value, error) -> {
+                             if (error != null) {
+                                 Log.e(TAG, "Failed to start MediaProjection service", error);
+diff --git a/android/src/main/java/com/oney/WebRTCModule/MediaProjectionNotification.java b/android/src/main/java/com/oney/WebRTCModule/MediaProjectionNotification.java
+index e09aa00..f9e0ae0 100644
+--- a/android/src/main/java/com/oney/WebRTCModule/MediaProjectionNotification.java
++++ b/android/src/main/java/com/oney/WebRTCModule/MediaProjectionNotification.java
+@@ -52,6 +52,19 @@ class MediaProjectionNotification {
+     static Notification buildMediaProjectionNotification(Context context) {
+         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, ONGOING_CONFERENCE_CHANNEL_ID);
+ 
++        // The small icon MUST resolve to a non-zero drawable: a mediaProjection
++        // foreground service started with an iconless notification is killed by the
++        // system on Android 11+, which tears down screen capture. Fall back to the app
++        // icon if the app ships no "ic_notification", and to a framework icon as a
++        // last resort, so the id is never 0.
++        int smallIcon = context.getResources().getIdentifier("ic_notification", "drawable", context.getPackageName());
++        if (smallIcon == 0) {
++            smallIcon = context.getApplicationInfo().icon;
++        }
++        if (smallIcon == 0) {
++            smallIcon = android.R.drawable.ic_menu_camera;
++        }
++
+         builder.setCategory(NotificationCompat.CATEGORY_CALL)
+                 .setContentTitle(context.getString(R.string.media_projection_notification_title))
+                 .setContentText(context.getString(R.string.media_projection_notification_text))
+@@ -61,8 +74,7 @@ class MediaProjectionNotification {
+                 .setAutoCancel(true)
+                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                 .setOnlyAlertOnce(true)
+-                .setSmallIcon(
+-                        context.getResources().getIdentifier("ic_notification", "drawable", context.getPackageName()))
++                .setSmallIcon(smallIcon)
+                 .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE);
+ 
+         return builder.build();
+diff --git a/android/src/main/java/com/oney/WebRTCModule/ScreenCaptureController.java b/android/src/main/java/com/oney/WebRTCModule/ScreenCaptureController.java
+index 554739d..8009424 100644
+--- a/android/src/main/java/com/oney/WebRTCModule/ScreenCaptureController.java
++++ b/android/src/main/java/com/oney/WebRTCModule/ScreenCaptureController.java
+@@ -76,11 +76,19 @@ public class ScreenCaptureController extends AbstractVideoCaptureController {
+                     public void onStop() {
+                         Log.w(TAG, "Media projection stopped.");
+                         orientationListener.disable();
+-                        stopCapture();
+ 
+-                        if (capturerEventsListener != null) {
+-                            capturerEventsListener.onCapturerEnded();
+-                        }
++                        // Pivot to the executor thread: stopCapture() blocks until the capture
++                        // thread joins, and running it synchronously on the MediaProjection
++                        // callback thread can deadlock (same reason changeCaptureFormat above
++                        // pivots). Keep the stop -> onCapturerEnded order so the JS 'ended'
++                        // event still fires after capture is actually down.
++                        ThreadUtils.runOnExecutor(() -> {
++                            stopCapture();
++
++                            if (capturerEventsListener != null) {
++                                capturerEventsListener.onCapturerEnded();
++                            }
++                        });
+                     }
+                 });
+ 
+diff --git a/ios/RCTWebRTC/ScreenCaptureController.m b/ios/RCTWebRTC/ScreenCaptureController.m
+index caab33c..8eb462a 100644
+--- a/ios/RCTWebRTC/ScreenCaptureController.m
++++ b/ios/RCTWebRTC/ScreenCaptureController.m
+@@ -46,6 +46,17 @@ NSString *const kRTCAppGroupIdentifier = @"RTCAppGroupIdentifier";
+ 
+     self.capturer.eventsDelegate = self;
+     NSString *socketFilePath = [self filePathForApplicationGroupIdentifier:self.appGroupIdentifier];
++    // containerURLForSecurityApplicationGroupIdentifier: returns nil when the app is
++    // NOT provisioned with this App Group (entitlement/portal missing). Passing the
++    // nil-derived path into SocketConnection crashes in strncpy(NULL). Bail out with
++    // a log instead — the JS side detects the never-starting share via its stats
++    // watchdog and cleans up gracefully.
++    if (socketFilePath == nil || socketFilePath.length == 0) {
++        NSLog(@"[ScreenCaptureController] App Group container unavailable for %@ — "
++              @"check the App Groups entitlement/provisioning; screen share cannot start.",
++              self.appGroupIdentifier);
++        return;
++    }
+     SocketConnection *connection = [[SocketConnection alloc] initWithFilePath:socketFilePath];
+     [self.capturer startCaptureWithConnection:connection];
+ }
+diff --git a/ios/RCTWebRTC/SocketConnection.m b/ios/RCTWebRTC/SocketConnection.m
+index 805986d..242c9a8 100644
+--- a/ios/RCTWebRTC/SocketConnection.m
++++ b/ios/RCTWebRTC/SocketConnection.m
+@@ -10,6 +10,13 @@
+ 
+ @property(nonatomic, strong) NSThread *networkThread;
+ 
++// GENIUS PATCH: whether the network thread was ever started. It is only started
++// inside the accept handler (openWithStreamDelegate), i.e. only once the broadcast
++// extension actually connects — a cancelled RPSystemBroadcastPicker sheet leaves it
++// created-but-never-run, and close's performSelector:onThread:…waitUntilDone:YES
++// onto a never-started thread blocks its caller FOREVER.
++@property(atomic, assign) BOOL threadStarted;
++
+ @property(nonatomic, strong) NSInputStream *inputStream;
+ @property(nonatomic, strong) NSOutputStream *outputStream;
+ 
+@@ -63,6 +70,7 @@
+         self.outputStream = (__bridge_transfer NSOutputStream *)writeStream;
+         [self.outputStream setProperty:@"kCFBooleanTrue" forKey:@"kCFStreamPropertyShouldCloseNativeSocket"];
+ 
++        self.threadStarted = YES; // GENIUS PATCH: see close
+         [self.networkThread start];
+         [self performSelector:@selector(scheduleStreams) onThread:self.networkThread withObject:nil waitUntilDone:true];
+ 
+@@ -75,7 +83,20 @@
+ }
+ 
+ - (void)close {
+-    [self performSelector:@selector(unscheduleStreams) onThread:self.networkThread withObject:nil waitUntilDone:true];
++    // GENIUS PATCH: hop onto the network thread only if it is actually running.
++    // For a broadcast that never connected (every cancelled consent sheet) the
++    // thread was never started: the waitUntilDone:YES hop then blocks forever —
++    // and the caller is WebRTCModule's serial workerQueue (its methodQueue), so
++    // one cancelled screen-share attempt wedged every later WebRTC native call
++    // and, via the RCT_EXPORT_BLOCKING_SYNCHRONOUS methods, froze the JS thread.
++    // With no thread running nothing was ever scheduled on its run loop, so
++    // closing the streams directly is correct and sufficient.
++    if (self.threadStarted && !self.networkThread.isFinished) {
++        [self performSelector:@selector(unscheduleStreams)
++                     onThread:self.networkThread
++                   withObject:nil
++                waitUntilDone:true];
++    }
+ 
+     self.inputStream.delegate = nil;
+     self.outputStream.delegate = nil;

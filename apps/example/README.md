@@ -1,65 +1,36 @@
-# example
+# jitsi-scribble example
 
-A minimal Expo app that runs the real `@vilancer/react-native` package
-(`ScribbleOverlay` + `useScribbleSession`) on a device, for the on-device
-verification items Phase 5 couldn't automate — see the phase's `05-UAT.md`.
+An Expo (SDK 55) app wired to the real packages.
 
-## What this is
+- **Solo demo:** no server. A simulated participant draws every 4 s. Try the in-app toolbar
+  ("Draw"), and the floating pen ("Floating pen", then switch to any other app).
+- **Join a Jitsi call:** a small lib-jitsi-meet client (no auth). Join the same room from a browser
+  or another phone; share your screen and use the floating pen over other apps, or draw on the
+  other side's video in the app.
 
-- `ScribbleOverlay` wired with a **single, unwired `MemoryTransport`**
-  (`@vilancer/protocol/transport`). `send()` on an unwired transport is a
-  documented no-op — it never reaches a peer. There is **no second
-  participant** in this build.
-- Every stroke you see is your own touch, rendered through the real
-  gesture worklet (`gesture.ts`), the real `StrokeStore` fade timing, and
-  the real SVG rendering — exactly what Phase 5 shipped. Nothing here is a
-  simplified stand-in for that part.
-- A fake "call screen" (colored background + Mute/Hang up buttons) sits
-  underneath the overlay, so you can check whether draw mode swallows taps
-  meant for call controls.
+## Run on an Android phone
 
-## What this is NOT
-
-- **Not a cross-device test.** There's no relay, no second phone, no real
-  Jitsi conference. Anything about stroke delivery *between* participants
-  is untested by this app.
-- **Not a full close of the mute/hang-up-through-overlay item.** The fake
-  call screen only proves the touch-pass-through mechanic (`pointerEvents`
-  flipping with `drawModeEnabled`). It doesn't exercise a real Jitsi
-  `JitsiMeeting`/`lib-jitsi-meet` call — that needs Phase 6's Genius_Native
-  integration.
-
-## Running it
-
-```bash
-# from the workspace root, once (already done if you're reading this after setup)
-pnpm install
-
+```sh
+pnpm install                      # from the repo root
 cd apps/example
-npx expo run:android      # first run: prebuilds ./android, builds, installs, launches
+npx expo run:android              # first time: prebuild + build + install
+# later:
+adb reverse tcp:8081 tcp:8081 && npx expo start --dev-client
 ```
 
-Daily loop after the first native build:
+Allow "Display over other apps" when the banner asks (or
+`adb shell appops set com.vilancer.jitsiscribbleexample SYSTEM_ALERT_WINDOW allow`).
 
-```bash
-adb reverse tcp:8081 tcp:8081
-npx expo start --dev-client
+## A Jitsi server to test against
+
+Any docker-jitsi-meet with `ENABLE_AUTH=0` works. The default server field
+(`http://192.168.8.157:8000`, or `EXPO_PUBLIC_JITSI_SERVER`) points at a local one on the dev
+machine's LAN. The phone connects over plain `ws://` on the LAN for this dev setup only.
+
+`apps/e2e/scripts/peer.mjs` joins the same room as a headless browser participant: it logs every
+annotation frame it receives, draws a test shape every few seconds, and saves screenshots.
+
+```sh
+cd apps/e2e
+PEER_SERVER=https://<host>:8443 PEER_ROOM=scribble-demo node scripts/peer.mjs
 ```
-
-Then reopen the app on the device (not Expo Go — this app has native modules
-via `expo run:android`'s dev client).
-
-## UAT checklist
-
-Use this to work through Phase 5's `05-UAT.md` pending items:
-
-1. **Latency** — tap the pencil FAB to enter draw mode, drag a finger across
-   the screen, watch for lag between finger and stroke.
-2. **Tap/drag feel** — try both a quick tap (should render as a tap ring,
-   not a line) and a slow drag.
-3. **Palm rejection** — rest a palm/second finger while drawing with another.
-4. **Fade smoothness** — lift your finger after a stroke and watch it fade.
-5. **Mute/hang-up pass-through** (partial, see above) — with draw mode OFF,
-   confirm Mute/Hang up respond normally; with draw mode ON, confirm the
-   overlay captures the touch instead (expected — that's `drawModeEnabled`
-   working as designed, not a bug to fix).

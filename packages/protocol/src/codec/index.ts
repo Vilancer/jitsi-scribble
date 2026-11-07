@@ -18,6 +18,10 @@ import {
   MSG_START,
   PROTOCOL_VERSION,
   QUANT_STEPS,
+  STYLE_COLOUR_PATTERN,
+  STYLE_MAX_TOOL_LENGTH,
+  STYLE_MAX_WIDTH,
+  STYLE_MIN_WIDTH,
 } from '../wire-constants.js';
 
 export type DecodeError =
@@ -64,6 +68,20 @@ function checkCoordinate(value: unknown): DecodeError | null {
 function checkPoint(value: unknown): DecodeError | null {
   if (!Array.isArray(value) || value.length !== 2) return 'invalid-type';
   return checkCoordinate(value[0]) ?? checkCoordinate(value[1]);
+}
+
+/** Validates the optional Start-frame style. Returns the clean style (only
+ * the three known fields, so unknown extra keys never travel further) or an
+ * error. */
+function checkStyle(value: unknown): { c: string; w: number; k: string } | DecodeError {
+  if (!isPlainObject(value)) return 'invalid-type';
+  const { c, w, k } = value;
+  if (typeof c !== 'string' || !STYLE_COLOUR_PATTERN.test(c)) return 'invalid-type';
+  if (typeof w !== 'number' || !Number.isFinite(w) || w < STYLE_MIN_WIDTH || w > STYLE_MAX_WIDTH) {
+    return 'invalid-type';
+  }
+  if (typeof k !== 'string' || k.length < 1 || k.length > STYLE_MAX_TOOL_LENGTH) return 'invalid-type';
+  return { c, w, k };
 }
 
 /**
@@ -114,6 +132,13 @@ export function decode(raw: unknown): DecodeResult {
         return { ok: false, error: 'invalid-type' };
       }
 
+      let st: { c: string; w: number; k: string } | undefined;
+      if ('st' in obj) {
+        const checked = checkStyle(obj.st);
+        if (typeof checked === 'string') return { ok: false, error: checked };
+        st = checked;
+      }
+
       return {
         ok: true,
         frame: {
@@ -123,6 +148,7 @@ export function decode(raw: unknown): DecodeResult {
           id: obj.id as string,
           p: obj.p as [number, number],
           frame: { w: frame.w, h: frame.h },
+          ...(st !== undefined ? { st } : {}),
         },
       };
     }

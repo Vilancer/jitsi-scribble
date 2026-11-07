@@ -12,6 +12,7 @@
     "src/**/*.test.tsx",
     "src/**/*.spec.tsx",
     "src/**/*.d.ts",
+    "src/test-support/**/*.ts",
     "jest.config.js"
   ],
   "references": [

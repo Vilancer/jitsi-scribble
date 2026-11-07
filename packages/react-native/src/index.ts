@@ -1,14 +1,24 @@
-// The public barrel — side-effect-free, matching packages/web/src/index.ts's
-// own convention (named re-exports only). fromJitsiConference is exported
-// (mirroring packages/web's barrel) so a consumer outside this monorepo can
-// build the probing adapter itself and hand the resulting ScribbleTransport
-// to useScribbleSession's `transport` option — INTEG-03's literal wording
-// (Genius_Native's useJitsiConference constructs the transport, not the
-// overlay).
-export { fromJitsiConference } from './fromJitsiConference.js';
-export type { FromJitsiConferenceOptions } from './fromJitsiConference.js';
+// Public API. Side-effect free: named re-exports only.
+
+// Session + UI
+export { ScribbleProvider, useScribble, useOptionalScribble, DEFAULT_TOOL_STATE } from './ScribbleProvider.js';
+export type { ScribbleProviderProps, ScribbleContextValue, ToolState } from './ScribbleProvider.js';
 export { ScribbleOverlay } from './ScribbleOverlay.js';
 export type { ScribbleOverlayProps } from './ScribbleOverlay.js';
+export { ScribbleToolbar } from './ScribbleToolbar.js';
+export type { ScribbleToolbarProps } from './ScribbleToolbar.js';
+export { ScribbleClient } from './client.js';
+export type { ScribbleClientOptions, InboundListener, PresenceListener } from './client.js';
+
+// Transport providers (one per call SDK)
+export { jitsi } from './providers/jitsi.js';
+export type { JitsiProviderOptions } from './providers/jitsi.js';
+export { MemoryTransport, createMemoryTransportPair } from './providers/memory.js';
+export type { ScribbleTransport, TransportState } from '@vilancer/protocol/transport';
+
+// Lower-level pieces (Phase 5 API, still supported)
+export { fromJitsiConference } from './fromJitsiConference.js';
+export type { FromJitsiConferenceOptions } from './fromJitsiConference.js';
 export { useScribbleSession } from './useScribbleSession.js';
 export type { UseScribbleSessionOptions, UseScribbleSessionResult } from './useScribbleSession.js';
 export { InAppSurface, inAppSurface } from './surfaces/InAppSurface.js';

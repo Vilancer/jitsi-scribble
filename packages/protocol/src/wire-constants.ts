@@ -42,3 +42,12 @@ export const MSG_MOVE = 'm' as const;
 export const MSG_END = 'e' as const;
 export const MSG_CLEAR = 'c' as const;
 export const MSG_PRESENCE = 'p' as const;
+
+/** Stroke-style bounds (the optional `st` field on a Start frame). `c` is a
+ * `#RRGGBB` colour, `w` a width in dp, `k` the drawing tool. An unknown `k`
+ * string is accepted on the wire (a newer sender may know more tools) and
+ * rendered as the default tool; only its length is bounded. */
+export const STYLE_MIN_WIDTH = 0.5 as const;
+export const STYLE_MAX_WIDTH = 64 as const;
+export const STYLE_MAX_TOOL_LENGTH = 16 as const;
+export const STYLE_COLOUR_PATTERN = /^#[0-9a-fA-F]{6}$/;

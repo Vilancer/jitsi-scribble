@@ -125,6 +125,22 @@ export const MOVE_COALESCE_DISTANCE_EPSILON = 0.01 as const;
  * decode-time 64-point safety ceiling. */
 export const MOVE_WIRE_BYTE_BUDGET = 600 as const;
 
+/** A stroke's drawing style, as chosen by its author. `tool` is one of
+ * SCRIBBLE_TOOLS (`@vilancer/protocol/render`) or, from a newer sender, a
+ * tool this version doesn't know — renderers fall back to the pen for
+ * those. */
+export interface StrokeStyle {
+  readonly color: string;
+  readonly width: number;
+  readonly tool: string;
+}
+
+/** Largest number of points one outbound Move frame carries. Well under
+ * MAX_POINTS_PER_MESSAGE (the decoder's hard limit) and sized so a frame stays
+ * near MOVE_WIRE_BYTE_BUDGET. A flush with more pending points (a shape, or a
+ * drag while the clock wasn't ticking) is split into several Move frames. */
+export const MAX_POINTS_PER_OUTBOUND_MOVE = 32 as const;
+
 export interface FrameDims {
   readonly w: number;
   readonly h: number;
@@ -152,6 +168,9 @@ export interface Stroke {
    * existed — "defaults to stroke" is a rendering-layer convention a
    * consumer applies via its own `stroke.kind === 'tap'` check. */
   readonly kind: 'tap' | 'stroke' | undefined;
+  /** The author's style, or `undefined` for a stroke sent without one
+   * (renderers then use the per-participant colour and default pen). */
+  readonly style: StrokeStyle | undefined;
 }
 
 /** Internal-only stroke record — a mutable working copy of `Stroke`'s
@@ -173,6 +192,7 @@ interface StrokeInternal {
   lastMoveAt: number;
   createdAt: number;
   kind: 'tap' | 'stroke' | undefined;
+  style: StrokeStyle | undefined;
 }
 
 interface StoreState {
@@ -250,6 +270,7 @@ function toPublicStroke(s: StrokeInternal): Stroke {
     fadeStartedAt: s.fadeStartedAt,
     alpha: s.alpha,
     kind: s.kind,
+    style: s.style,
   };
 }
 
@@ -390,7 +411,7 @@ export class StrokeStore {
    * the actual Start WireFrame emission happens on the FIRST appendLocal
    * call, not here (matching the wire's own Start-carries-the-first-point
    * shape). */
-  beginLocal(id: string, frame: FrameDims): void {
+  beginLocal(id: string, frame: FrameDims, style?: StrokeStyle): void {
     Effect.runSync(
       Ref.update(this.state, (s) => {
         this.enforceCapsBeforeInsert(s.strokes, LOCAL_SENDER);
@@ -406,6 +427,7 @@ export class StrokeStore {
           createdAt: this.lastTickNow,
           lastMoveAt: this.lastTickNow,
           kind: undefined,
+          style: style ? { color: style.color, width: style.width, tool: style.tool } : undefined,
         };
         s.strokes.set(this.key(LOCAL_SENDER, id), internal);
         return s;
@@ -442,6 +464,7 @@ export class StrokeStore {
               id,
               p: [quantize(u), quantize(v)],
               frame: entry.frame as FrameDims,
+              ...(entry.style ? { st: { c: entry.style.color, w: entry.style.width, k: entry.style.tool } } : {}),
             };
           } else {
             this.localOutbound.get(id)?.pendingPoints.push([u, v]);
@@ -527,14 +550,16 @@ export class StrokeStore {
     const outbound = this.localOutbound.get(id);
     if (!outbound || outbound.pendingPoints.length === 0) return;
 
-    const frame: WireFrame = {
-      v: PROTOCOL_VERSION,
-      t: MSG_MOVE,
-      from: this.localId,
-      id,
-      pts: outbound.pendingPoints.map(([u, v]): [number, number] => [quantize(u), quantize(v)]),
-    };
-    this.emitOutbound(frame);
+    const quantized = outbound.pendingPoints.map(([u, v]): [number, number] => [quantize(u), quantize(v)]);
+    for (let i = 0; i < quantized.length; i += MAX_POINTS_PER_OUTBOUND_MOVE) {
+      this.emitOutbound({
+        v: PROTOCOL_VERSION,
+        t: MSG_MOVE,
+        from: this.localId,
+        id,
+        pts: quantized.slice(i, i + MAX_POINTS_PER_OUTBOUND_MOVE),
+      });
+    }
 
     const lastFlushPoint = outbound.pendingPoints[outbound.pendingPoints.length - 1];
     outbound.pendingPoints = [];
@@ -656,6 +681,7 @@ export class StrokeStore {
               createdAt: this.lastTickNow,
               lastMoveAt: this.lastTickNow,
               kind: undefined,
+              style: frame.st ? { color: frame.st.c, width: frame.st.w, tool: frame.st.k } : undefined,
             };
             s.strokes.set(key, internal);
             return s;
@@ -695,6 +721,7 @@ export class StrokeStore {
                 createdAt: this.lastTickNow,
                 lastMoveAt: this.lastTickNow,
                 kind: undefined,
+                style: undefined,
               };
               this.appendPointsCapped(inserted, dequantizedPoints);
               s.strokes.set(key, inserted);
@@ -882,6 +909,7 @@ export class StrokeStore {
           createdAt: this.lastTickNow,
           lastMoveAt: this.lastTickNow,
           kind: undefined,
+          style: undefined,
         });
         return s;
       }),

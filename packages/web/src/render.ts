@@ -6,7 +6,7 @@
 import type { ContentRect } from '@vilancer/protocol/geometry';
 import { computeStrokeWidth, denormalize } from '@vilancer/protocol/geometry';
 import type { Stroke, StrokeStore } from '@vilancer/protocol/core';
-import { CASING_COLOUR, CASING_EXTRA_WIDTH_DP, CORE_WIDTH_DP, colourForParticipant } from '@vilancer/protocol/render';
+import { CASING_COLOUR, CASING_EXTRA_WIDTH_DP, CORE_WIDTH_DP, colourForParticipant, toolRecipe } from '@vilancer/protocol/render';
 
 import { observeContentRectChanges } from './jitsiMeetWeb.js';
 
@@ -27,12 +27,12 @@ function pathDataFor(stroke: Stroke, contentRect: ContentRect): string {
  * `.setAttribute` — never `innerHTML`/template-string HTML (T-04-01-01:
  * `stroke.from`/`stroke.id` are attacker-influenced strings).
  */
-function svgPath(d: string, widthPx: number, colour: string, alpha: number): SVGPathElement {
+function svgPath(d: string, widthPx: number, colour: string, alpha: number, cap: 'round' | 'butt' = 'round'): SVGPathElement {
   const el = document.createElementNS(SVG_NS, 'path');
   el.setAttribute('d', d);
   el.setAttribute('stroke', colour);
   el.setAttribute('stroke-width', String(widthPx));
-  el.setAttribute('stroke-linecap', 'round');
+  el.setAttribute('stroke-linecap', cap);
   el.setAttribute('stroke-linejoin', 'round');
   el.setAttribute('fill', 'none');
   el.style.opacity = String(alpha);
@@ -73,13 +73,16 @@ export function mountRenderer(store: StrokeStore, getRect: () => ContentRect | n
     for (const stroke of strokes) {
       if (stroke.points.length === 0) continue;
       const d = pathDataFor(stroke, contentRect);
-      const coreWidth = computeStrokeWidth(CORE_WIDTH_DP, contentRect, box);
-      const casingWidth = computeStrokeWidth(CORE_WIDTH_DP + CASING_EXTRA_WIDTH_DP, contentRect, box);
+      // The author's style when the stroke carries one (colour, width, tool),
+      // else the participant colour and default pen.
+      const recipe = toolRecipe(stroke.style?.tool);
+      const base = (stroke.style?.width ?? CORE_WIDTH_DP) * recipe.widthScale;
+      const coreWidth = computeStrokeWidth(base, contentRect, box);
+      const casingWidth = computeStrokeWidth(base + CASING_EXTRA_WIDTH_DP, contentRect, box);
 
-      const casing = svgPath(d, casingWidth, CASING_COLOUR, stroke.alpha);
-      const core = svgPath(d, coreWidth, colourForParticipant(stroke.from), stroke.alpha);
-      svg.appendChild(casing);
-      svg.appendChild(core);
+      if (recipe.casing) svg.appendChild(svgPath(d, casingWidth, CASING_COLOUR, stroke.alpha));
+      const colour = stroke.style?.color ?? colourForParticipant(stroke.from);
+      svg.appendChild(svgPath(d, coreWidth, colour, stroke.alpha * recipe.opacity, recipe.cap));
     }
   }
 

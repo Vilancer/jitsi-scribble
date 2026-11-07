@@ -23,6 +23,8 @@ const handPickedValidFrames: WireFrame[] = [
   { v: 1, t: 'c', from: 'p1' },
   { v: 1, t: 'p', from: 'p1', vis: true },
   { v: 1, t: 'p', from: 'p1', vis: false },
+  { v: 1, t: 's', from: 'p1', id: 'i1', p: [10, 20], frame: { w: 1080, h: 2400 }, st: { c: '#0A84FF', w: 6, k: 'marker' } },
+  { v: 1, t: 's', from: 'p1', id: 'i1', p: [10, 20], frame: { w: 1, h: 1 }, st: { c: '#ffffff', w: 0.5, k: 'some-future-tool' } },
 ];
 
 function randomValidPoint(): [number, number] {
@@ -75,6 +77,13 @@ describe('accept/reject parity: schema and codec agree on every hostile case', (
     { v: 2, t: 's', from: 'p1', id: 'i1', p: [0, 0], frame: { w: 1, h: 1 } },
     { v: 1, t: 's', from: 'p1', p: [0, 0], frame: { w: 1, h: 1 } }, // missing id
     { v: 1, t: 'e', from: 'p1', id: 'i1', kind: 'bogus' }, // D-01, T-05-04: forged kind value
+    // stroke style: bad colour, width out of range, empty/oversized tool, wrong shape
+    { v: 1, t: 's', from: 'p1', id: 'i1', p: [0, 0], frame: { w: 1, h: 1 }, st: { c: 'red', w: 4, k: 'pen' } },
+    { v: 1, t: 's', from: 'p1', id: 'i1', p: [0, 0], frame: { w: 1, h: 1 }, st: { c: '#FF0000', w: 0, k: 'pen' } },
+    { v: 1, t: 's', from: 'p1', id: 'i1', p: [0, 0], frame: { w: 1, h: 1 }, st: { c: '#FF0000', w: 65, k: 'pen' } },
+    { v: 1, t: 's', from: 'p1', id: 'i1', p: [0, 0], frame: { w: 1, h: 1 }, st: { c: '#FF0000', w: 4, k: '' } },
+    { v: 1, t: 's', from: 'p1', id: 'i1', p: [0, 0], frame: { w: 1, h: 1 }, st: { c: '#FF0000', w: 4, k: 'x'.repeat(17) } },
+    { v: 1, t: 's', from: 'p1', id: 'i1', p: [0, 0], frame: { w: 1, h: 1 }, st: 'pen' },
   ];
 
   for (const hostile of hostileCases) {

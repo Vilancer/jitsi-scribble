@@ -1,6 +1,6 @@
 {
   "name": "@vilancer/protocol",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "publishConfig": {
     "access": "public"
   },
@@ -51,6 +51,12 @@
       "react-native": "./dist/render/index.js",
       "import": "./dist/render/index.js",
       "default": "./dist/render/index.js"
+    },
+    "./shapes": {
+      "types": "./dist/shapes/index.d.ts",
+      "react-native": "./dist/shapes/index.js",
+      "import": "./dist/shapes/index.js",
+      "default": "./dist/shapes/index.js"
     }
   },
   "files": [
