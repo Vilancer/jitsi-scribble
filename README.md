@@ -20,9 +20,9 @@ not a whiteboard.
 
 | Package | What it is | Status |
 |---|---|---|
-| [`@vilancer/react-native`](packages/react-native) | `ScribbleProvider`, `ScribbleOverlay`, `ScribbleToolbar`, the `jitsi()` provider. Pure JS. | 0.1.0, not yet on npm |
-| [`@vilancer/native-overlay`](packages/native-overlay) | The floating out-of-app pen (Android Expo module). Optional. | 0.1.0, not yet on npm |
-| [`@vilancer/protocol`](packages/protocol) | Wire format, stroke store, geometry, shapes. Used by the other packages. | `0.0.1` on npm (0.1.0 not yet published) |
+| [`@vilancer/react-native`](packages/react-native) | `ScribbleProvider`, `ScribbleOverlay`, `ScribbleToolbar`, the `jitsi()` provider. Pure JS. | [![npm](https://img.shields.io/npm/v/@vilancer/react-native)](https://www.npmjs.com/package/@vilancer/react-native) |
+| [`@vilancer/native-overlay`](packages/native-overlay) | The floating out-of-app pen (Android Expo module). Optional. | [![npm](https://img.shields.io/npm/v/@vilancer/native-overlay)](https://www.npmjs.com/package/@vilancer/native-overlay) |
+| [`@vilancer/protocol`](packages/protocol) | Wire format, stroke store, geometry, shapes. Used by the other packages. | [![npm](https://img.shields.io/npm/v/@vilancer/protocol)](https://www.npmjs.com/package/@vilancer/protocol) |
 | [`@vilancer/web`](packages/web) | Renders the ink on jitsi-meet web (and so in Jibri recordings). | private |
 
 ## Install (Expo)
