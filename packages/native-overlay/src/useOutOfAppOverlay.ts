@@ -13,7 +13,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 
 import { useScribble } from '@vilancer/scribble';
-import { colourGrid, SCRIBBLE_COLOURS, SCRIBBLE_WIDTHS } from '@vilancer/scribble-protocol/render';
+import { COLOUR_GRID, SCRIBBLE_COLOURS, SCRIBBLE_WIDTHS } from '@vilancer/scribble-protocol/render';
 import { FADE_MS, HOLD_MS, STALE_MS } from '@vilancer/scribble-protocol/core';
 
 import { OutOfAppBridge } from './bridge.js';
@@ -128,7 +128,7 @@ export function useOutOfAppOverlay(options: OutOfAppOverlayOptions = {}): OutOfA
       staleMs: client?.options.staleMs ?? STALE_MS,
       swatches: [...SCRIBBLE_COLOURS],
       widths: [...SCRIBBLE_WIDTHS],
-      grid: colourGrid().map((row) => [...row]),
+      grid: COLOUR_GRID.map((row) => [...row]),
       style: toNativeStyle(toolsRef.current),
       })
       .then((ok) => setVisible(ok));

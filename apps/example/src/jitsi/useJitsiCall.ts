@@ -154,9 +154,16 @@ export function useJitsiCall(server: string, room: string, displayName: string):
     try {
       const [desktop] = await JitsiMeetJS.createLocalTracks({ devices: ['desktop'] });
       desktopRef.current = desktop;
+      // Sharing stopped from Android's own controls: take the track out of
+      // the conference too, or the next share fails ("Cannot add second
+      // video track").
       desktop.on?.(JitsiMeetJS.events.track.LOCAL_TRACK_STOPPED, () => {
+        if (desktopRef.current !== desktop) return;
         desktopRef.current = null;
         setSharing(false);
+        Promise.resolve(conferenceRef.current?.removeTrack(desktop))
+          .catch(() => undefined)
+          .finally(() => desktop.dispose?.());
       });
       await conf.addTrack(desktop);
       setSharing(true);

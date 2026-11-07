@@ -2,12 +2,12 @@
 // clear, done) in the style of iOS Markup / FaceTime's drawing tools. Reads
 // and writes the surrounding <ScribbleProvider>'s tool state. The Android
 // out-of-app overlay draws the same palette natively.
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Circle, G, Line, Path, Polyline, Rect, Svg } from 'react-native-svg';
 
 import {
-  colourGrid,
+  COLOUR_GRID,
   SCRIBBLE_COLOURS,
   SCRIBBLE_SHAPES,
   SCRIBBLE_TOOLS,
@@ -112,7 +112,7 @@ export function ScribbleToolbar({ onDone, style, colours = SCRIBBLE_COLOURS }: S
   const { tools, setTools, setDrawing, clearMine } = useScribble();
   const [gridOpen, setGridOpen] = useState(false);
   const [sizeOpen, setSizeOpen] = useState(false);
-  const grid = useMemo(() => colourGrid(), []);
+  const grid = COLOUR_GRID;
   const custom = !colours.some((c) => c.toUpperCase() === tools.color.toUpperCase());
 
   return (

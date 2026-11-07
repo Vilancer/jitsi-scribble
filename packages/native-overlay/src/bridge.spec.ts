@@ -1,7 +1,7 @@
 import { AppState } from 'react-native';
 import { createMemoryTransportPair } from '@vilancer/scribble-protocol/transport';
 import { decode } from '@vilancer/scribble-protocol/codec';
-import { MSG_CLEAR, MSG_END, MSG_MOVE, MSG_PRESENCE, MSG_START } from '@vilancer/scribble-protocol/core';
+import { MSG_CLEAR, MSG_END, MSG_MOVE, MSG_PRESENCE, MSG_START, RATE_CAPACITY } from '@vilancer/scribble-protocol/core';
 import { ScribbleClient } from '@vilancer/scribble';
 
 import { OutOfAppBridge, type OverlayNative } from './bridge.js';
@@ -20,6 +20,7 @@ function fakeNative() {
     remoteAppend: (...a: unknown[]) => void calls.push(['remoteAppend', ...a]),
     remoteEnd: (...a: unknown[]) => void calls.push(['remoteEnd', ...a]),
     clear: (...a: unknown[]) => void calls.push(['clear', ...a]),
+    clearSender: (...a: unknown[]) => void calls.push(['clearSender', ...a]),
     addListener(event, fn) {
       if (!listeners.has(event)) listeners.set(event, new Set());
       listeners.get(event)!.add(fn as Listener);
@@ -72,11 +73,26 @@ describe('OutOfAppBridge', () => {
     expect(calls).toContainEqual(['remoteEnd', 'viewer b', 'stroke']);
   });
 
+  it('a flooding sender is capped by the same rate limit before reaching the native layer', async () => {
+    // Frozen clock: no bucket refill while the burst arrives.
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_800_000_000_000);
+    const { viewer, calls, bridge } = setup();
+    await bridge.show({ hideInkFromCapture: false, hideControlsFromCapture: false, holdMs: 2000, fadeMs: 500, staleMs: 1500 });
+    for (let i = 0; i < RATE_CAPACITY + 50; i++) {
+      viewer.transport.send({ v: 1, t: 's', from: 'viewer', id: `flood-${i}`, p: [10, 10], frame: { w: 1, h: 1 } });
+    }
+    const begins = calls.filter((c) => c[0] === 'remoteBegin').length;
+    expect(begins).toBeLessThanOrEqual(RATE_CAPACITY);
+    expect(begins).toBeGreaterThan(0);
+    now.mockRestore();
+  });
+
   it('a remote Clear clears that sender on the ink layer', async () => {
     const { viewer, calls, bridge } = setup();
     await bridge.show({ hideInkFromCapture: false, hideControlsFromCapture: false, holdMs: 2000, fadeMs: 500, staleMs: 1500 });
     viewer.clearMine();
-    expect(calls).toContainEqual(['clear', 'viewer']);
+    expect(calls).toContainEqual(['clearSender', 'viewer']);
+    expect(calls.some((c) => c[0] === 'clear')).toBe(false);
   });
 
   it('turns native touches into wire frames with style, and the viewer receives the stroke', async () => {

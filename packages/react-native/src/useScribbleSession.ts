@@ -146,6 +146,10 @@ export interface UseScribbleSessionResult {
   /** This session's own local participant id, once known (empty string
    * before the transport has been constructed). */
   localId: string;
+  /** The session this hook is currently bound to (null before it exists).
+   * Its identity changes whenever the session is rebuilt, even when the
+   * participant id stays the same; key subscriptions on it. */
+  client: ScribbleClient | null;
 }
 
 interface SessionHandles {
@@ -169,6 +173,7 @@ export function useScribbleSession(
 
   const sessionRef = useRef<SessionHandles | null>(null);
   const [localId, setLocalId] = useState('');
+  const [activeClient, setActiveClient] = useState<ScribbleClient | null>(null);
   const [remotePresenceBySender, setRemotePresenceBySender] = useState<
     ReadonlyMap<string, boolean>
   >(new Map());
@@ -255,6 +260,7 @@ export function useScribbleSession(
     const { transport, store } = client;
     sessionRef.current = { transport, store, client };
     setLocalId(transport.localId());
+    setActiveClient(client);
     prevStrokeSnapshotRef.current = new Map();
     setRemotePresenceBySender(client.getPresence());
 
@@ -287,6 +293,7 @@ export function useScribbleSession(
       unsubscribeStore();
       stopClient?.();
       sessionRef.current = null;
+      setActiveClient(null);
     };
     // conference / transport / client identity changing means the host
     // swapped sessions: rebuild. transportOptions and the callbacks are read
@@ -346,5 +353,6 @@ export function useScribbleSession(
     appendLocal,
     endLocal,
     localId,
+    client: activeClient,
   };
 }

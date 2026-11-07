@@ -7,6 +7,10 @@
 /** @type {import('jest').Config} */
 export default {
   testTimeout: 30000,
+  // nx runs projects in parallel; uncapped Jest workers on top of that
+  // starve the first renders (svg/reanimated/gesture-handler load) on a
+  // busy machine.
+  maxWorkers: 2,
   preset: 'jest-expo',
   // This package's TS sources use nodenext-style explicit `.js` extensions
   // on relative imports (e.g. `./gestureClassifier.js`, matching
