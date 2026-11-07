@@ -301,19 +301,25 @@ class OverlayController(
    * layer. */
   override fun onPassThrough(e: MotionEvent) {
     if (e.actionMasked == MotionEvent.ACTION_DOWN) {
+      // Hide the ring but keep its window touchable until the finger lifts:
+      // changing the window's flags mid-gesture makes Android cancel it.
+      passThrough = true
       menu?.alpha = 0f
       canvas?.dismissTapOnly = true
     }
     canvas?.onTouchEvent(e)
     if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) {
+      passThrough = false
       setMenuOpen(false, animate = false)
     }
   }
 
+  private var passThrough = false
+
   /** The user started drawing straight on the ink layer: put the ring away. */
   override fun onTouchStart() {
     main.removeCallbacks(autoOff)
-    if (menuOpen) {
+    if (menuOpen && !passThrough) {
       canvas?.dismissTapOnly = true
       setMenuOpen(false)
     }
