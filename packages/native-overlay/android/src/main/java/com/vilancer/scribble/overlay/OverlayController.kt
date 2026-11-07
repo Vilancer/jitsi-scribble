@@ -260,6 +260,9 @@ class OverlayController(
   override fun onStyleChanged(style: InkStyle) {
     setStyle(style)
     emit(EVENT_STYLE, styleBody(style) + mapOf("shape" to style.shape))
+    // Pick and draw: once something is chosen, fold the ring away so the
+    // very next touch draws. Tap the bubble to bring it back.
+    if (menuOpen) main.postDelayed({ if (menuOpen) setMenuOpen(false) }, PICK_CLOSE_DELAY_MS)
   }
 
   override fun onClear() {
@@ -511,6 +514,8 @@ class OverlayController(
   companion object {
     private const val TAG = "ScribbleOverlay"
     private const val TUCK_AFTER_MS = 4000L
+    /** Long enough to see the selection ring land on what you picked. */
+    private const val PICK_CLOSE_DELAY_MS = 180L
     const val EVENT_STROKE = "onLocalStroke"
     const val EVENT_STYLE = "onStyleChange"
     const val EVENT_ACTION = "onAction"
