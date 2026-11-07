@@ -59,6 +59,11 @@
       "dependsOn": [
         "^build"
       ]
+    },
+    "nx-release-publish": {
+      "dependsOn": [
+        "build"
+      ]
     }
   }
 }
