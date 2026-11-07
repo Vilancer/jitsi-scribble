@@ -146,3 +146,19 @@ describe('OutOfAppBridge', () => {
     expect(viewer.getPresence().get('sharer')).toBe(AppState.currentState === 'active');
   });
 });
+
+describe('OutOfAppBridge dismiss', () => {
+  it('drag-to-close reports onDismiss and releases the presence override', async () => {
+    const [a] = createMemoryTransportPair('me', 'them');
+    const client = new ScribbleClient(a);
+    const stop = client.start();
+    const { native } = fakeNative();
+    const onDismiss = jest.fn();
+    const bridge = new OutOfAppBridge(client, native, { onDismiss });
+    await bridge.show({ hideInkFromCapture: false, hideControlsFromCapture: false, holdMs: 2000, fadeMs: 500, staleMs: 1500 });
+    native.emit('onAction', { action: 'dismiss' });
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    bridge.dispose();
+    stop();
+  });
+});

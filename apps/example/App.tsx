@@ -1,13 +1,15 @@
 // jitsi-scribble example: a solo demo (no server) and a real Jitsi call.
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
 import { CallScreen } from './src/CallScreen';
 import { SoloScreen } from './src/SoloScreen';
-import { colors, Icon } from './src/ui';
+import { canDrawOverlays, isOutOfAppOverlaySupported, requestOverlayPermission } from '@vilancer/scribble-overlay';
+
+import { colors, Icon, type PenSwitch } from './src/ui';
 
 // Default server: a local docker-jitsi-meet (see apps/example/README.md).
 const DEFAULT_SERVER = process.env.EXPO_PUBLIC_JITSI_SERVER ?? 'http://192.168.8.157:8000';
@@ -16,15 +18,20 @@ type Screen = { kind: 'home' } | { kind: 'solo' } | { kind: 'call'; server: stri
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>({ kind: 'home' });
+  // One switch for the floating pen, shared by practice and calls.
+  const [penOn, setPenOn] = useState(false);
+  const pen = { penOn, setPenOn };
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <SafeAreaView style={{ flex: 1, backgroundColor: '#000' }} edges={['top', 'bottom']}>
           <StatusBar style="light" />
-          {screen.kind === 'home' && <Home onSolo={() => setScreen({ kind: 'solo' })} onJoin={(s) => setScreen({ kind: 'call', ...s })} />}
-          {screen.kind === 'solo' && <SoloScreen onLeave={() => setScreen({ kind: 'home' })} />}
+          {screen.kind === 'home' && (
+            <Home pen={pen} onSolo={() => setScreen({ kind: 'solo' })} onJoin={(s) => setScreen({ kind: 'call', ...s })} />
+          )}
+          {screen.kind === 'solo' && <SoloScreen pen={pen} onLeave={() => setScreen({ kind: 'home' })} />}
           {screen.kind === 'call' && (
-            <CallScreen server={screen.server} room={screen.room} name={screen.name} onLeave={() => setScreen({ kind: 'home' })} />
+            <CallScreen pen={pen} server={screen.server} room={screen.room} name={screen.name} onLeave={() => setScreen({ kind: 'home' })} />
           )}
         </SafeAreaView>
       </SafeAreaProvider>
@@ -32,7 +39,15 @@ export default function App() {
   );
 }
 
-function Home({ onSolo, onJoin }: { onSolo: () => void; onJoin: (s: { server: string; room: string; name: string }) => void }) {
+function Home({
+  pen,
+  onSolo,
+  onJoin,
+}: {
+  pen: PenSwitch;
+  onSolo: () => void;
+  onJoin: (s: { server: string; room: string; name: string }) => void;
+}) {
   const [server, setServer] = useState(DEFAULT_SERVER);
   const [room, setRoom] = useState('scribble-demo');
   const [name, setName] = useState('');
@@ -48,6 +63,8 @@ function Home({ onSolo, onJoin }: { onSolo: () => void; onJoin: (s: { server: st
           <Text style={home.title}>Scribble</Text>
           <Text style={home.sub}>Point at things on each other's screens during a call. Drawings fade after a few seconds.</Text>
         </View>
+
+        <PenSwitchRow pen={pen} />
 
         <Pressable testID="solo" style={({ pressed }) => [home.card, pressed && home.pressed]} onPress={onSolo} accessibilityRole="button">
           <View style={[home.cardIcon, { backgroundColor: colors.blue }]}>
@@ -89,6 +106,35 @@ function Home({ onSolo, onJoin }: { onSolo: () => void; onJoin: (s: { server: st
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
+  );
+}
+
+/** The single on/off for the floating pen. Turning it on asks for the
+ * "display over other apps" permission if it's missing. */
+function PenSwitchRow({ pen }: { pen: PenSwitch }) {
+  const toggle = (on: boolean) => {
+    if (on && isOutOfAppOverlaySupported() && !canDrawOverlays()) requestOverlayPermission();
+    pen.setPenOn(on);
+  };
+  return (
+    <Pressable style={home.card} onPress={() => toggle(!pen.penOn)} accessibilityRole="switch" accessibilityState={{ checked: pen.penOn }}>
+      <View style={[home.cardIcon, { backgroundColor: colors.surface2 }]}>
+        <Icon name="bubble" />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={home.cardTitle}>Floating pen</Text>
+        <Text style={home.cardBody}>
+          {pen.penOn ? 'On: during practice and calls a pen floats over every app. Drag it to the ✕ to hide it.' : 'Off. Turn on to draw over any app during practice and calls.'}
+        </Text>
+      </View>
+      <Switch
+        testID="pen-switch"
+        value={pen.penOn}
+        onValueChange={toggle}
+        trackColor={{ false: colors.surface2, true: colors.green }}
+        thumbColor="#FFFFFF"
+      />
+    </Pressable>
   );
 }
 

@@ -6,6 +6,12 @@ import { Circle, Line, Path, Rect, Svg } from 'react-native-svg';
 
 import type { OutOfAppOverlayState } from '@vilancer/scribble-overlay';
 
+/** The app-wide floating pen on/off. */
+export interface PenSwitch {
+  penOn: boolean;
+  setPenOn: (on: boolean) => void;
+}
+
 export const colors = {
   bg: '#000000',
   stage: '#0E0E10',
