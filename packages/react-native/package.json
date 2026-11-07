@@ -1,6 +1,9 @@
 {
   "name": "@vilancer/react-native",
   "version": "0.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "main": "./dist/commonjs/index.js",
   "module": "./dist/module/index.js",
@@ -79,5 +82,12 @@
         }
       }
     }
+  },
+  "description": "FaceTime-style drawing for React Native and Expo video calls: provider, ink overlay, toolbar, Jitsi transport.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Vilancer/jitsi-scribble.git",
+    "directory": "packages/react-native"
   }
 }
