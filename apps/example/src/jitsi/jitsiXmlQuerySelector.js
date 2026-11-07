@@ -244,7 +244,6 @@ function elementChildren(node) {
  * Derives the prototypes from a parsed sample (xmldom doesn't export the classes).
  */
 function installXmlQuerySelector() {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { DOMParser } = require('@xmldom/xmldom');
   const sample = new DOMParser().parseFromString('<r><c/></r>', 'text/xml');
   const elementProto = Object.getPrototypeOf(sample.documentElement);

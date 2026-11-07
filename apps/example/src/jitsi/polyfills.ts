@@ -34,7 +34,6 @@ if (typeof g.btoa === 'undefined') {
 // with no setter breaks strict-mode `global.TextEncoder = …` assignments, which
 // `text-encoding` itself performs).
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const te = require('text-encoding');
   if (typeof g.TextEncoder === 'undefined') g.TextEncoder = te.TextEncoder;
   if (typeof g.TextDecoder === 'undefined') g.TextDecoder = te.TextDecoder;

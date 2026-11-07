@@ -20,7 +20,6 @@
  */
 import { LogBox } from 'react-native';
 import { DOMParser, XMLSerializer, DOMImplementation } from '@xmldom/xmldom';
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const { installXmlQuerySelector } = require('./jitsiXmlQuerySelector');
 // registerGlobals installs RTCPeerConnection, RTCSessionDescription, RTCIceCandidate,
 // MediaStream, MediaStreamTrack, and navigator.mediaDevices (getUserMedia /

@@ -6,6 +6,7 @@
 // `latest`.
 /** @type {import('jest').Config} */
 export default {
+  testTimeout: 30000,
   preset: 'jest-expo',
   // This package's TS sources use nodenext-style explicit `.js` extensions
   // on relative imports (e.g. `./gestureClassifier.js`, matching

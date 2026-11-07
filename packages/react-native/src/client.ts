@@ -72,6 +72,11 @@ export class ScribbleClient {
     const unsubscribeOutbound = store.onOutbound((frame) => transport.send(frame));
 
     const unsubscribeTransport = transport.subscribe((from, payload) => {
+      // Stamp the frame with its arrival time. The frame clock below can lag
+      // by seconds (a busy JS thread, or RN pausing frame callbacks while
+      // the app is in the background), and a stroke stamped with a stale
+      // clock would count as already faded and be dropped on the next tick.
+      store.tick(Date.now());
       store.apply(payload, from);
       const result = decode(payload);
       if (!result.ok) return;

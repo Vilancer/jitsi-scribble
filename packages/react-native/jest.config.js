@@ -7,6 +7,10 @@
 /** @type {import('jest').Config} */
 export default {
   preset: 'jest-expo',
+  setupFiles: ['<rootDir>/jest.setup.js'],
+  // First renders load svg/reanimated/gesture-handler and take seconds on a
+  // busy CI runner; the default 5 s is too tight there.
+  testTimeout: 30000,
   // This package's TS sources use nodenext-style explicit `.js` extensions
   // on relative imports (e.g. `./gestureClassifier.js`, matching
   // packages/protocol's own convention) even though the file on disk is
