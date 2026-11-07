@@ -54,6 +54,8 @@ class OverlayController(
   private var canvas: InkCanvasView? = null
   private var menu: RadialMenuView? = null
   private var bubble: BubbleView? = null
+  private var dismiss: DismissTargetView? = null
+  private var dismissParams: WindowManager.LayoutParams? = null
   private var canvasParams: WindowManager.LayoutParams? = null
   private var menuParams: WindowManager.LayoutParams? = null
   private var bubbleParams: WindowManager.LayoutParams? = null
@@ -154,17 +156,29 @@ class OverlayController(
       title = "ScribbleBubble"
     }
 
+    val dt = DismissTargetView(app).apply { visibility = View.GONE }
+    val dtParams = baseParams(dt.sizePx, dt.sizePx).apply {
+      flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+      gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+      y = (72f * d).toInt()
+      title = "ScribbleDismiss"
+    }
+
     try {
       wm.addView(ink, inkParams)
       wm.addView(ring, ringParams)
+      wm.addView(dt, dtParams)
       wm.addView(bb, bbParams)
     } catch (e: Exception) {
       Log.w(TAG, "could not add overlay windows", e)
       safeRemove(ink)
       safeRemove(ring)
+      safeRemove(dt)
       safeRemove(bb)
       return false
     }
+    dismiss = dt
+    dismissParams = dtParams
     canvas = ink
     menu = ring
     bubble = bb
@@ -190,6 +204,8 @@ class OverlayController(
     main.removeCallbacks(remoteQuiet)
     main.removeCallbacks(tuckRunnable)
     main.removeCallbacks(autoOff)
+    safeRemove(dismiss)
+    dismiss = null
     safeRemove(bubble)
     safeRemove(menu)
     safeRemove(canvas)
@@ -344,10 +360,38 @@ class OverlayController(
     p.x = (p.x + dx).toInt()
     p.y = (p.y + dy).toInt()
     update(b, p)
+    dismiss?.let {
+      it.visibility = View.VISIBLE
+      it.hot = overDismiss()
+    }
   }
 
   override fun onBubbleDragEnd() {
+    val drop = overDismiss()
+    dismiss?.apply {
+      hot = false
+      visibility = View.GONE
+    }
+    if (drop) {
+      // Dropped on the X: turn the floating pen off. The app hears about it
+      // so its own switch can follow.
+      hide()
+      emit(EVENT_ACTION, mapOf("action" to "dismiss"))
+      return
+    }
     snapBubble(animate = true)
+  }
+
+  /** Is the bubble's centre within reach of the dismiss target? */
+  private fun overDismiss(): Boolean {
+    val bp = bubbleParams ?: return false
+    val b = bubble ?: return false
+    val size = displaySize()
+    val cx = bp.x + b.sizePx / 2f
+    val cy = bp.y + b.sizePx / 2f
+    val tx = size.x / 2f
+    val ty = size.y - (72f * d) - (dismiss?.sizePx ?: 0) / 2f
+    return kotlin.math.hypot(cx - tx, cy - ty) < 80f * d
   }
 
   // ── ring window ───────────────────────────────────────────────────────────

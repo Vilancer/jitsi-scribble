@@ -32,7 +32,7 @@ export type LocalStrokeEvent =
 export type OverlayEvents = {
   onLocalStroke: (e: LocalStrokeEvent) => void;
   onStyleChange: (e: NativeStyle) => void;
-  onAction: (e: { action: 'clear' }) => void;
+  onAction: (e: { action: 'clear' | 'dismiss' }) => void;
   onStateChange: (e: { visible: boolean; drawing: boolean }) => void;
 };
 

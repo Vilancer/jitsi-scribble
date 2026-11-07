@@ -16,7 +16,7 @@ import {
 } from '@vilancer/scribble';
 import { shapePoints } from '@vilancer/scribble-protocol/shapes';
 
-import { CallButton, CallControls, EmptyState, OverlayPermissionCard, StatusPill, styles } from './ui';
+import { CallButton, CallControls, EmptyState, OverlayPermissionCard, StatusPill, styles, type PenSwitch } from './ui';
 
 const GHOST_COLOURS = ['#0A84FF', '#30D158', '#FFD60A', '#BF5AF2'];
 
@@ -48,7 +48,7 @@ function useGhost(client: ScribbleClient, on: boolean, frame: { w: number; h: nu
   }, [client, on, frame.w, frame.h]);
 }
 
-export function SoloScreen({ onLeave }: { onLeave: () => void }) {
+export function SoloScreen({ pen, onLeave }: { pen: PenSwitch; onLeave: () => void }) {
   const [mine, ghostT] = useMemo(() => createMemoryTransportPair('me', 'ghost'), []);
   const ghost = useMemo(() => new ScribbleClient(ghostT), [ghostT]);
   useEffect(() => {
@@ -58,26 +58,25 @@ export function SoloScreen({ onLeave }: { onLeave: () => void }) {
   }, [ghost, mine, ghostT]);
   return (
     <ScribbleProvider transport={mine}>
-      <SoloBody ghost={ghost} onLeave={onLeave} />
+      <SoloBody ghost={ghost} pen={pen} onLeave={onLeave} />
     </ScribbleProvider>
   );
 }
 
-function SoloBody({ ghost, onLeave }: { ghost: ScribbleClient; onLeave: () => void }) {
+function SoloBody({ ghost, pen, onLeave }: { ghost: ScribbleClient; pen: PenSwitch; onLeave: () => void }) {
   const { drawing, setDrawing } = useScribble();
   const [ghostOn, setGhostOn] = useState(true);
-  const [bubble, setBubble] = useState(false);
   const [stage, setStage] = useState<{ w: number; h: number } | undefined>(undefined);
   const screen = useWindowDimensions();
   // The partner "shares" a phone-shaped screen, so its ink maps onto this
   // phone's whole display when the floating pen is on.
   useGhost(ghost, ghostOn, { w: screen.width, h: screen.height });
-  const overlay = useOutOfAppOverlay({ enabled: bubble, showWhen: 'always' });
+  const overlay = useOutOfAppOverlay({ enabled: pen.penOn, showWhen: 'always', onDismiss: () => pen.setPenOn(false) });
 
   return (
     <View style={styles.root}>
       <StatusPill title="Practice" detail={ghostOn ? 'Demo partner drawing' : 'Just you'} tone="good" onBack={onLeave} />
-      <OverlayPermissionCard overlay={overlay} wanted={bubble} />
+      <OverlayPermissionCard overlay={overlay} wanted={pen.penOn} />
       <View
         style={styles.stage}
         onLayout={(e) => setStage({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
@@ -99,7 +98,7 @@ function SoloBody({ ghost, onLeave }: { ghost: ScribbleClient; onLeave: () => vo
       </View>
       <CallControls>
         <CallButton testID="draw" icon="pen" label="Draw" active={drawing} onPress={() => setDrawing(!drawing)} />
-        <CallButton testID="bubble" icon="bubble" label="Floating pen" active={bubble} onPress={() => setBubble((v) => !v)} />
+        <CallButton testID="bubble" icon="bubble" label="Floating pen" active={pen.penOn} onPress={() => pen.setPenOn(!pen.penOn)} />
         <CallButton testID="ghost" icon="people" label="Partner" active={ghostOn} onPress={() => setGhostOn((v) => !v)} />
         <CallButton testID="leave" icon="end" label="End" danger onPress={onLeave} />
       </CallControls>

@@ -10,6 +10,8 @@ const overlay = useOutOfAppOverlay({ enabled: isSharingScreen }); // inside <Scr
 if (overlay.supported && !overlay.permitted) overlay.requestPermission();
 ```
 
-Options: `showWhen: 'background' | 'always'`, `hideInkFromScreenShare`,
+To turn it off from the screen itself, drag the bubble onto the ✕ that appears at the bottom; `onDismiss` tells your app so its own switch can follow.
+
+Options: `showWhen: 'background' | 'always'`, `onDismiss`, `hideInkFromScreenShare`,
 `hideControlsFromScreenShare`. Needs a development build (it is an Expo module) and adds the
 `SYSTEM_ALERT_WINDOW` permission. On iOS and web every export is a no-op (`supported: false`).

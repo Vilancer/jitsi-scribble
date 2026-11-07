@@ -34,6 +34,10 @@ export interface OutOfAppOverlayOptions {
   hideInkFromScreenShare?: boolean;
   /** Same for the bubble and toolbar. Default false. */
   hideControlsFromScreenShare?: boolean;
+  /** The user dragged the bubble onto the ✕ at the bottom of the screen.
+   * The pen is already gone; set your `enabled` switch to false here. It
+   * stays hidden until `enabled` goes false and back to true. */
+  onDismiss?: () => void;
 }
 
 export interface OutOfAppOverlayState {
@@ -62,6 +66,13 @@ export function useOutOfAppOverlay(options: OutOfAppOverlayOptions = {}): OutOfA
     hideInkFromScreenShare = false,
     hideControlsFromScreenShare = false,
   } = options;
+  const onDismissRef = useRef(options.onDismiss);
+  onDismissRef.current = options.onDismiss;
+  const [dismissed, setDismissed] = useState(false);
+  // Turning `enabled` off clears a dismissal, so the next "on" shows it.
+  useEffect(() => {
+    if (!enabled) setDismissed(false);
+  }, [enabled]);
   const { client, tools, setTools } = useScribble();
   const supported = Native !== null;
   const [permitted, setPermitted] = useState(() => Native?.canDrawOverlays() ?? false);
@@ -96,6 +107,12 @@ export function useOutOfAppOverlay(options: OutOfAppOverlayOptions = {}): OutOfA
           shape: (s.shape ?? null) as never,
         });
       },
+      onDismiss: () => {
+        setDismissed(true);
+        setVisible(false);
+        setDrawingState(false);
+        onDismissRef.current?.();
+      },
       onStateChange: (s) => {
         setVisible(s.visible);
         setDrawingState(s.drawing);
@@ -109,7 +126,7 @@ export function useOutOfAppOverlay(options: OutOfAppOverlayOptions = {}): OutOfA
   }, [client]);
 
   const wantVisible =
-    supported && permitted && enabled && client !== null && (showWhen === 'always' || appState !== 'active');
+    supported && permitted && enabled && !dismissed && client !== null && (showWhen === 'always' || appState !== 'active');
 
   useEffect(() => {
     const bridge = bridgeRef.current;

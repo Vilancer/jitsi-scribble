@@ -33,6 +33,9 @@ export interface OverlayNative {
 export interface OutOfAppBridgeOptions {
   /** Called when the user changes tool/colour/size in the native toolbar. */
   onStyleChange?: (style: NativeStyle) => void;
+  /** Called when the user drags the bubble onto the close target: the
+   * overlay is already hidden; turn your own "floating pen" switch off. */
+  onDismiss?: () => void;
   /** Called when the native state changes (shown/hidden, draw mode). */
   onStateChange?: (state: { visible: boolean; drawing: boolean }) => void;
 }
@@ -63,6 +66,11 @@ export class OutOfAppBridge {
       native.addListener('onLocalStroke', ((e: LocalStrokeEvent) => this.onLocalStroke(e)) as (e: never) => void),
       native.addListener('onAction', ((e: { action: string }) => {
         if (e.action === 'clear') this.clearMine();
+        if (e.action === 'dismiss') {
+          this.visible = false;
+          this.client.setPresenceOverride(null);
+          this.options.onDismiss?.();
+        }
       }) as (e: never) => void),
       native.addListener('onStyleChange', ((e: NativeStyle) => this.options.onStyleChange?.(e)) as (e: never) => void),
       native.addListener('onStateChange', ((e: { visible: boolean; drawing: boolean }) => {

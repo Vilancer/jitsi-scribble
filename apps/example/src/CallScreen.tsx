@@ -15,26 +15,26 @@ import {
 } from '@vilancer/scribble';
 
 import { useJitsiCall, type JitsiCall } from './jitsi/useJitsiCall';
-import { CallButton, CallControls, EmptyState, OverlayPermissionCard, StatusPill, styles } from './ui';
+import { CallButton, CallControls, EmptyState, OverlayPermissionCard, StatusPill, styles, type PenSwitch } from './ui';
 
-export function CallScreen(props: { server: string; room: string; name: string; onLeave: () => void }) {
+export function CallScreen(props: { pen: PenSwitch; server: string; room: string; name: string; onLeave: () => void }) {
   const call = useJitsiCall(props.server, props.room, props.name);
   // The transport provider: Jitsi. Rebuilt only when the conference changes.
   const transport = useMemo(() => (call.conference ? jitsi(call.conference) : undefined), [call.conference]);
   return (
     <ScribbleProvider transport={transport}>
-      <CallBody call={call} room={props.room} onLeave={props.onLeave} />
+      <CallBody call={call} room={props.room} pen={props.pen} onLeave={props.onLeave} />
     </ScribbleProvider>
   );
 }
 
-function CallBody({ call, room, onLeave }: { call: JitsiCall; room: string; onLeave: () => void }) {
+function CallBody({ call, room, pen, onLeave }: { call: JitsiCall; room: string; pen: PenSwitch; onLeave: () => void }) {
   const { drawing, setDrawing } = useScribble();
-  const [bubbleAlways, setBubbleAlways] = useState(false);
   const [frameDims, setFrameDims] = useState<{ w: number; h: number } | undefined>(undefined);
   const overlay = useOutOfAppOverlay({
-    enabled: call.sharing || bubbleAlways,
-    showWhen: bubbleAlways ? 'always' : 'background',
+    enabled: pen.penOn,
+    showWhen: 'always',
+    onDismiss: () => pen.setPenOn(false),
   });
 
   const video = call.remoteVideo;
@@ -51,7 +51,7 @@ function CallBody({ call, room, onLeave }: { call: JitsiCall; room: string; onLe
   return (
     <View style={styles.root}>
       <StatusPill title={room} detail={status.detail} tone={status.tone} onBack={onLeave} />
-      <OverlayPermissionCard overlay={overlay} wanted={call.sharing || bubbleAlways} />
+      <OverlayPermissionCard overlay={overlay} wanted={pen.penOn} />
       <View style={styles.stage}>
         {video ? (
           <>
@@ -71,7 +71,7 @@ function CallBody({ call, room, onLeave }: { call: JitsiCall; room: string; onLe
           <EmptyState
             icon="share"
             title="You're sharing your screen"
-            body="Switch to any app. Tap the floating pen there to draw; the other person's drawings show up too."
+            body={pen.penOn ? "Switch to any app. Tap the floating pen there to draw; the other person's drawings show up too." : 'Turn on the floating pen to draw over other apps while you share.'}
           />
         ) : people < 2 ? (
           <EmptyState icon="people" title="Waiting for others to join" body={`Ask them to join the room "${room}".`} />
@@ -105,8 +105,8 @@ function CallBody({ call, room, onLeave }: { call: JitsiCall; room: string; onLe
           testID="bubble"
           icon="bubble"
           label="Floating pen"
-          active={bubbleAlways}
-          onPress={() => setBubbleAlways((v) => !v)}
+          active={pen.penOn}
+          onPress={() => pen.setPenOn(!pen.penOn)}
         />
         <CallButton testID="leave" icon="end" label="End" danger onPress={onLeave} />
       </CallControls>
