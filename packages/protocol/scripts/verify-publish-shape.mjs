@@ -138,8 +138,8 @@ async function main() {
   mkdirSync(SCRATCH_INSTALL_DIR, { recursive: true });
 
   try {
-    log('==> building @vilancer/scribble-protocol (nx build protocol)');
-    run('pnpm', ['nx', 'build', 'protocol'], { cwd: REPO_ROOT });
+    log('==> building @vilancer/scribble-protocol (nx build @vilancer/scribble-protocol)');
+    run('pnpm', ['nx', 'build', '@vilancer/scribble-protocol'], { cwd: REPO_ROOT });
 
     log('==> writing isolated verdaccio config (storage: ' + STORAGE_DIR + ')');
     writeFileSync(
