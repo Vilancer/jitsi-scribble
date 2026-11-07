@@ -173,32 +173,46 @@ class InkPainter(private val density: Float) {
     canvas.drawCircle(x, y, r, paint)
   }
 
-  /** Quadratic smoothing through point midpoints, so a fast drag reads as a
-   * curve rather than a polyline. */
+  /**
+   * Smooths freehand ink (quadratic curves through segment midpoints) but
+   * keeps real corners sharp: a vertex where the line turns hard, or that
+   * joins a long straight segment, is drawn as a corner. Freehand samples
+   * are a few dp apart and turn gently; shape outlines (arrow heads,
+   * rectangle corners) have long sides and sharp turns, and smoothing them
+   * bent the arrowhead into a hook.
+   */
   private fun buildPath(s: InkStroke, w: Float, h: Float, ox: Float, oy: Float) {
     path.reset()
     val n = s.us.size
-    val x0 = s.us[0] * w - ox
-    val y0 = s.vs[0] * h - oy
-    path.moveTo(x0, y0)
+    fun x(i: Int) = s.us[i] * w - ox
+    fun y(i: Int) = s.vs[i] * h - oy
+    path.moveTo(x(0), y(0))
     if (n == 1) {
-      path.lineTo(x0 + 0.1f, y0)
+      path.lineTo(x(0) + 0.1f, y(0))
       return
     }
-    if (n == 2) {
-      path.lineTo(s.us[1] * w - ox, s.vs[1] * h - oy)
-      return
+    val longSegment = 20f * density
+    for (i in 1 until n - 1) {
+      val ax = x(i) - x(i - 1)
+      val ay = y(i) - y(i - 1)
+      val bx = x(i + 1) - x(i)
+      val by = y(i + 1) - y(i)
+      val la = hypot(ax, ay)
+      val lb = hypot(bx, by)
+      val turn = if (la > 0f && lb > 0f) Math.toDegrees(
+        kotlin.math.acos(((ax * bx + ay * by) / (la * lb)).coerceIn(-1f, 1f).toDouble()),
+      ) else 0.0
+      if (turn > SHARP_TURN_DEG || la > longSegment || lb > longSegment) {
+        path.lineTo(x(i), y(i))
+      } else {
+        path.quadTo(x(i), y(i), (x(i) + x(i + 1)) / 2f, (y(i) + y(i + 1)) / 2f)
+      }
     }
-    var px = x0
-    var py = y0
-    for (i in 1 until n) {
-      val x = s.us[i] * w - ox
-      val y = s.vs[i] * h - oy
-      path.quadTo(px, py, (px + x) / 2f, (py + y) / 2f)
-      px = x
-      py = y
-    }
-    path.lineTo(px, py)
+    path.lineTo(x(n - 1), y(n - 1))
+  }
+
+  private companion object {
+    const val SHARP_TURN_DEG = 50.0
   }
 
   private fun texture(color: Int, kind: ToolRecipe.Texture): BitmapShader {
