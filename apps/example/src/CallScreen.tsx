@@ -1,8 +1,8 @@
 // A real call over Jitsi: the other side's video (their screen share if
 // they have one) with the annotation overlay on top, the drawing toolbar,
 // and screen sharing from this phone with the floating pen outside the app.
-import { useEffect, useMemo, useState } from 'react';
-import { Text, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { View } from 'react-native';
 import { RTCView } from 'react-native-webrtc';
 
 import { useOutOfAppOverlay } from '@vilancer/scribble-overlay';
@@ -15,7 +15,7 @@ import {
 } from '@vilancer/scribble';
 
 import { useJitsiCall, type JitsiCall } from './jitsi/useJitsiCall';
-import { ControlBar, ControlButton, OverlayPermissionBanner, styles } from './ui';
+import { CallButton, CallControls, EmptyState, OverlayPermissionCard, StatusPill, styles } from './ui';
 
 export function CallScreen(props: { server: string; room: string; name: string; onLeave: () => void }) {
   const call = useJitsiCall(props.server, props.room, props.name);
@@ -29,7 +29,7 @@ export function CallScreen(props: { server: string; room: string; name: string; 
 }
 
 function CallBody({ call, room, onLeave }: { call: JitsiCall; room: string; onLeave: () => void }) {
-  const { drawing, setDrawing, client } = useScribble();
+  const { drawing, setDrawing } = useScribble();
   const [bubbleAlways, setBubbleAlways] = useState(false);
   const [frameDims, setFrameDims] = useState<{ w: number; h: number } | undefined>(undefined);
   const overlay = useOutOfAppOverlay({
@@ -38,24 +38,20 @@ function CallBody({ call, room, onLeave }: { call: JitsiCall; room: string; onLe
   });
 
   const video = call.remoteVideo;
-  // Frames received from the other side, shown in the status line.
-  const [rx, setRx] = useState(0);
-  useEffect(() => {
-    if (!client) return undefined;
-    const off = client.onInbound(() => setRx((n) => n + 1));
-    return () => {
-      off();
-    };
-  }, [client]);
+  const people = call.participants + 1;
+  const status =
+    call.status === 'failed'
+      ? { tone: 'bad' as const, detail: "Couldn't connect" }
+      : call.status !== 'joined'
+        ? { tone: 'wait' as const, detail: 'Connecting…' }
+        : people < 2
+          ? { tone: 'wait' as const, detail: 'Waiting for others' }
+          : { tone: 'good' as const, detail: `${people} people` };
 
   return (
     <View style={styles.root}>
-      <Text style={styles.status} testID="call-status">
-        {room} · {call.status}
-        {call.error ? ` · ${call.error}` : ''} · {call.participants + 1} in call
-        {client ? ` · ${client.transport.state} · ${rx} frames in` : ''}
-      </Text>
-      <OverlayPermissionBanner overlay={overlay} />
+      <StatusPill title={room} detail={status.detail} tone={status.tone} onBack={onLeave} />
+      <OverlayPermissionCard overlay={overlay} wanted={call.sharing || bubbleAlways} />
       <View style={styles.stage}>
         {video ? (
           <>
@@ -69,14 +65,18 @@ function CallBody({ call, room, onLeave }: { call: JitsiCall; room: string; onLe
             />
             <ScribbleOverlay frameDims={frameDims} receiveAnnotations={!overlay.visible} />
           </>
+        ) : call.status === 'failed' ? (
+          <EmptyState icon="phone" title="Couldn't join the call" body={call.error ?? 'Check the server address and your connection.'} />
+        ) : call.sharing ? (
+          <EmptyState
+            icon="share"
+            title="You're sharing your screen"
+            body="Switch to any app. Tap the floating pen there to draw; the other person's drawings show up too."
+          />
+        ) : people < 2 ? (
+          <EmptyState icon="people" title="Waiting for others to join" body={`Ask them to join the room "${room}".`} />
         ) : (
-          <View style={styles.center}>
-            <Text style={styles.hint}>
-              {call.sharing
-                ? 'You are sharing your screen.\n\nGo to any app: a floating pen appears. Tap it to draw on your screen; whatever the other side draws shows up there too.'
-                : 'Waiting for the other side to share their screen.\n\nOr share yours with the button below.'}
-            </Text>
-          </View>
+          <EmptyState icon="share" title="Nothing shared yet" body="When someone shares their screen, it appears here and you can draw on it." />
         )}
         {drawing && video && (
           <View style={styles.toolbarDock}>
@@ -84,24 +84,32 @@ function CallBody({ call, room, onLeave }: { call: JitsiCall; room: string; onLe
           </View>
         )}
       </View>
-      <ControlBar>
-        {video && (
-          <ControlButton testID="draw" label={drawing ? 'Drawing' : 'Draw'} active={drawing} onPress={() => setDrawing(!drawing)} />
-        )}
-        <ControlButton
+      <CallControls>
+        <CallButton
           testID="share"
-          label={call.sharing ? 'Stop sharing' : 'Share screen'}
+          icon="share"
+          label={call.sharing ? 'Stop share' : 'Share'}
           active={call.sharing}
+          disabled={call.status !== 'joined'}
           onPress={() => void (call.sharing ? call.stopShare() : call.startShare())}
         />
-        <ControlButton
+        <CallButton
+          testID="draw"
+          icon="pen"
+          label="Draw"
+          active={drawing}
+          disabled={!video}
+          onPress={() => setDrawing(!drawing)}
+        />
+        <CallButton
           testID="bubble"
-          label={bubbleAlways ? 'Hide pen' : 'Floating pen'}
+          icon="bubble"
+          label="Floating pen"
           active={bubbleAlways}
           onPress={() => setBubbleAlways((v) => !v)}
         />
-        <ControlButton testID="leave" label="Leave" danger onPress={onLeave} />
-      </ControlBar>
+        <CallButton testID="leave" icon="end" label="End" danger onPress={onLeave} />
+      </CallControls>
     </View>
   );
 }

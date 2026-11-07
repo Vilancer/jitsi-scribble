@@ -1,9 +1,9 @@
-// Solo demo, no server: this phone plus a simulated "ghost" participant
+// Practice mode, no server: this phone plus a simulated "demo partner"
 // connected through an in-memory transport pair. The ghost circles and
 // points at things every few seconds, so you can see remote ink arrive both
 // in the app and, with the floating pen on, over other apps.
 import { useEffect, useMemo, useState } from 'react';
-import { Text, View, useWindowDimensions } from 'react-native';
+import { View, useWindowDimensions } from 'react-native';
 
 import { useOutOfAppOverlay } from '@vilancer/scribble-overlay';
 import {
@@ -16,7 +16,7 @@ import {
 } from '@vilancer/scribble';
 import { shapePoints } from '@vilancer/scribble-protocol/shapes';
 
-import { ControlBar, ControlButton, OverlayPermissionBanner, styles } from './ui';
+import { CallButton, CallControls, EmptyState, OverlayPermissionCard, StatusPill, styles } from './ui';
 
 const GHOST_COLOURS = ['#0A84FF', '#30D158', '#FFD60A', '#BF5AF2'];
 
@@ -69,25 +69,27 @@ function SoloBody({ ghost, onLeave }: { ghost: ScribbleClient; onLeave: () => vo
   const [bubble, setBubble] = useState(false);
   const [stage, setStage] = useState<{ w: number; h: number } | undefined>(undefined);
   const screen = useWindowDimensions();
-  // The ghost "shares" a phone-shaped screen, so its ink maps onto this
+  // The partner "shares" a phone-shaped screen, so its ink maps onto this
   // phone's whole display when the floating pen is on.
   useGhost(ghost, ghostOn, { w: screen.width, h: screen.height });
   const overlay = useOutOfAppOverlay({ enabled: bubble, showWhen: 'always' });
 
   return (
     <View style={styles.root}>
-      <Text style={styles.status}>Solo demo · a simulated participant draws every 4 s</Text>
-      <OverlayPermissionBanner overlay={overlay} />
+      <StatusPill title="Practice" detail={ghostOn ? 'Demo partner drawing' : 'Just you'} tone="good" onBack={onLeave} />
+      <OverlayPermissionCard overlay={overlay} wanted={bubble} />
       <View
         style={styles.stage}
         onLayout={(e) => setStage({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
       >
-        <View style={styles.center}>
-          <Text style={styles.hint}>
-            {'Tap Draw for the in-app tools, or turn on the floating pen and switch to any other app.'}
-          </Text>
-        </View>
-        {/* While the floating layer is up it draws remote ink itself. */}
+        {!drawing && (
+          <EmptyState
+            icon="sparkle"
+            title="Try drawing"
+            body="Tap Draw to sketch here, or turn on the floating pen and switch to any other app."
+          />
+        )}
+        {/* While the floating layer is up it draws the partner's ink itself. */}
         <ScribbleOverlay frameDims={stage} receiveAnnotations={!overlay.visible} />
         {drawing && (
           <View style={styles.toolbarDock}>
@@ -95,12 +97,12 @@ function SoloBody({ ghost, onLeave }: { ghost: ScribbleClient; onLeave: () => vo
           </View>
         )}
       </View>
-      <ControlBar>
-        <ControlButton testID="draw" label={drawing ? 'Drawing' : 'Draw'} active={drawing} onPress={() => setDrawing(!drawing)} />
-        <ControlButton testID="bubble" label={bubble ? 'Hide pen' : 'Floating pen'} active={bubble} onPress={() => setBubble((v) => !v)} />
-        <ControlButton testID="ghost" label={ghostOn ? 'Ghost on' : 'Ghost off'} active={ghostOn} onPress={() => setGhostOn((v) => !v)} />
-        <ControlButton testID="leave" label="Back" danger onPress={onLeave} />
-      </ControlBar>
+      <CallControls>
+        <CallButton testID="draw" icon="pen" label="Draw" active={drawing} onPress={() => setDrawing(!drawing)} />
+        <CallButton testID="bubble" icon="bubble" label="Floating pen" active={bubble} onPress={() => setBubble((v) => !v)} />
+        <CallButton testID="ghost" icon="people" label="Partner" active={ghostOn} onPress={() => setGhostOn((v) => !v)} />
+        <CallButton testID="leave" icon="end" label="End" danger onPress={onLeave} />
+      </CallControls>
     </View>
   );
 }
