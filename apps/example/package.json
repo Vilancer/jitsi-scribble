@@ -15,6 +15,7 @@
     "@xmldom/xmldom": "0.8.13",
     "base-64": "1.0.0",
     "expo": "55.0.28",
+    "expo-build-properties": "~55.0.18",
     "expo-status-bar": "~55.0.5",
     "lib-jitsi-meet": "https://github.com/jitsi/lib-jitsi-meet/releases/download/v2154.0.0+a99a68d0/lib-jitsi-meet.tgz",
     "react": "19.2.0",
@@ -31,9 +32,9 @@
   },
   "devDependencies": {
     "@babel/core": "^7.29.7",
+    "@types/base-64": "1.0.2",
     "@types/react": "~19.2.10",
     "babel-preset-expo": "~55.0.24",
-    "typescript": "6.0.3",
-    "@types/base-64": "1.0.2"
+    "typescript": "6.0.3"
   }
 }
