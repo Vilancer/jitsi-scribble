@@ -353,6 +353,7 @@ class RadialMenuView(
     if (e.actionMasked == MotionEvent.ACTION_UP) {
       val idx = hits.indexOfLast { hypot(e.x - it.x, e.y - it.y) <= it.radius }
       if (idx >= 0 && idx == pressedIndex) {
+        performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
         performClick()
         hits[idx].action()
         invalidate()
