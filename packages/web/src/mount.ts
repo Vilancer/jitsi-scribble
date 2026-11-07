@@ -1,6 +1,6 @@
 // Orchestrates the real adapter + StrokeStore (unchanged from Phase 3) +
 // SVG renderer into one `mountScribbleOverlay()` call (WEB-01/02/03).
-import { StrokeStore } from '@vilancer/protocol/core';
+import { StrokeStore } from '@vilancer/scribble-protocol/core';
 
 import { fromJitsiConference } from './transport/fromJitsiConference.js';
 import { mountRenderer } from './render.js';

@@ -1,4 +1,4 @@
-# @vilancer/react-native
+# @vilancer/scribble
 
 FaceTime-style drawing for React Native video calls: `ScribbleProvider` (one annotation session per
 call), `ScribbleOverlay` (the ink layer over a video), `ScribbleToolbar` (pen, marker, pencil,

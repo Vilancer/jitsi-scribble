@@ -2,7 +2,7 @@
 // StrokeStore, wires it to the transport in both directions, drives the fade
 // clock, and handles presence. Plain TypeScript, no React, so every surface
 // (the in-app overlay, the toolbar, the out-of-app overlay in
-// @vilancer/native-overlay) can share the same session.
+// @vilancer/scribble-overlay) can share the same session.
 //
 // Security notes carried over from the original hook (useScribbleSession):
 // - store.apply() runs FIRST and for EVERY inbound payload, decodable or not,
@@ -11,15 +11,15 @@
 //   payload's `from` field (T-05-05).
 import { AppState } from 'react-native';
 
-import { decode } from '@vilancer/protocol/codec';
+import { decode } from '@vilancer/scribble-protocol/codec';
 import {
   MSG_CLEAR,
   MSG_PRESENCE,
   PROTOCOL_VERSION,
   StrokeStore,
-} from '@vilancer/protocol/core';
-import type { WireFrame } from '@vilancer/protocol/schema';
-import type { ScribbleTransport } from '@vilancer/protocol/transport';
+} from '@vilancer/scribble-protocol/core';
+import type { WireFrame } from '@vilancer/scribble-protocol/schema';
+import type { ScribbleTransport } from '@vilancer/scribble-protocol/transport';
 
 export type InboundListener = (from: string, frame: WireFrame) => void;
 export type PresenceListener = (bySender: ReadonlyMap<string, boolean>) => void;

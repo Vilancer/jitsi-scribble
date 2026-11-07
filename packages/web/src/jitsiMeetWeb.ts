@@ -3,7 +3,7 @@
 // reading #largeVideo's content rect without recomputing jitsi-meet's own
 // letterbox math (Pattern 5 — "the content rect, read rather than
 // computed").
-import type { ContentRect } from '@vilancer/protocol/geometry';
+import type { ContentRect } from '@vilancer/scribble-protocol/geometry';
 
 /** Minimal shape of jitsi-meet's redux store this library depends on —
  * intentionally narrow, not the real jitsi-meet redux store's full type. */

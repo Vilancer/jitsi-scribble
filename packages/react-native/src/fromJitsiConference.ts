@@ -22,7 +22,7 @@
 // ('conference.dataChannelOpened' / 'conference.dataChannelClosed'), NOT
 // snake_case. Only ENDPOINT_MESSAGE_RECEIVED is snake_case
 // ('conference.endpoint_message_received').
-import type { ScribbleTransport, TransportState } from '@vilancer/protocol/transport';
+import type { ScribbleTransport, TransportState } from '@vilancer/scribble-protocol/transport';
 
 /** Real lib-jitsi-meet event-name defaults, overridable via `opts.events`.
  * On web, `mount.ts` passes `window.JitsiMeetJS?.events?.conference` when

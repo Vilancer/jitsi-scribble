@@ -11,9 +11,9 @@
 // wire format as in-app strokes. Its clock is ticked on every native event
 // rather than by requestAnimationFrame, because RN pauses frame callbacks
 // while the app is in the background, which is exactly when this runs.
-import { dequantize, MSG_CLEAR, MSG_END, MSG_MOVE, MSG_START, StrokeStore } from '@vilancer/protocol/core';
-import type { WireFrame } from '@vilancer/protocol/schema';
-import type { ScribbleClient } from '@vilancer/react-native';
+import { dequantize, MSG_CLEAR, MSG_END, MSG_MOVE, MSG_START, StrokeStore } from '@vilancer/scribble-protocol/core';
+import type { WireFrame } from '@vilancer/scribble-protocol/schema';
+import type { ScribbleClient } from '@vilancer/scribble';
 
 import type { LocalStrokeEvent, NativeShowOptions, NativeStyle } from './native.js';
 

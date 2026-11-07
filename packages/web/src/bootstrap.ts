@@ -56,7 +56,7 @@ export function bootstrap(): void {
 
 // Module-evaluation-time side effect — this is what fires when the IIFE
 // build's own entry (Plan 04-03) is evaluated on jitsi-meet's page. A bare
-// `import { mountScribbleOverlay } from '@vilancer/web'` never reaches this
+// `import { mountScribbleOverlay } from '@vilancer/scribble-web'` never reaches this
 // file (index.ts deliberately does not re-export it), so this side effect
 // never fires on a plain package import.
 bootstrap();

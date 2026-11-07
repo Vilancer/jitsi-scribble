@@ -18,7 +18,7 @@
 // 04-RESEARCH.md's Pattern 4 excerpt. Only ENDPOINT_MESSAGE_RECEIVED is
 // snake_case ('conference.endpoint_message_received') and was already
 // correct there.
-import type { ScribbleTransport, TransportState } from '@vilancer/protocol/transport';
+import type { ScribbleTransport, TransportState } from '@vilancer/scribble-protocol/transport';
 
 /** Real lib-jitsi-meet event-name defaults, overridable via `opts.events` —
  * `mount.ts` passes `window.JitsiMeetJS?.events?.conference` when available so

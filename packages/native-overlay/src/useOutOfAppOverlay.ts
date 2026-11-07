@@ -12,9 +12,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 
-import { useScribble } from '@vilancer/react-native';
-import { colourGrid, SCRIBBLE_COLOURS, SCRIBBLE_WIDTHS } from '@vilancer/protocol/render';
-import { FADE_MS, HOLD_MS, STALE_MS } from '@vilancer/protocol/core';
+import { useScribble } from '@vilancer/scribble';
+import { colourGrid, SCRIBBLE_COLOURS, SCRIBBLE_WIDTHS } from '@vilancer/scribble-protocol/render';
+import { FADE_MS, HOLD_MS, STALE_MS } from '@vilancer/scribble-protocol/core';
 
 import { OutOfAppBridge } from './bridge.js';
 import { Native, type NativeStyle } from './native.js';

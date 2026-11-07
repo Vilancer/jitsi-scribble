@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Text, View, useWindowDimensions } from 'react-native';
 
-import { useOutOfAppOverlay } from '@vilancer/native-overlay';
+import { useOutOfAppOverlay } from '@vilancer/scribble-overlay';
 import {
   ScribbleClient,
   ScribbleOverlay,
@@ -13,8 +13,8 @@ import {
   ScribbleToolbar,
   createMemoryTransportPair,
   useScribble,
-} from '@vilancer/react-native';
-import { shapePoints } from '@vilancer/protocol/shapes';
+} from '@vilancer/scribble';
+import { shapePoints } from '@vilancer/scribble-protocol/shapes';
 
 import { ControlBar, ControlButton, OverlayPermissionBanner, styles } from './ui';
 

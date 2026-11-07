@@ -126,7 +126,7 @@ export const MOVE_COALESCE_DISTANCE_EPSILON = 0.01 as const;
 export const MOVE_WIRE_BYTE_BUDGET = 600 as const;
 
 /** A stroke's drawing style, as chosen by its author. `tool` is one of
- * SCRIBBLE_TOOLS (`@vilancer/protocol/render`) or, from a newer sender, a
+ * SCRIBBLE_TOOLS (`@vilancer/scribble-protocol/render`) or, from a newer sender, a
  * tool this version doesn't know — renderers fall back to the pen for
  * those. */
 export interface StrokeStyle {

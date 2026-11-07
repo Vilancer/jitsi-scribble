@@ -5,14 +5,14 @@
 // overlay View's own `onLayout` event rather than `getBoundingClientRect()`.
 //
 // Every actual transform (contentRect/repairAspect) is imported from
-// @vilancer/protocol/geometry, never re-derived here (RESEARCH.md Pitfall 7
+// @vilancer/scribble-protocol/geometry, never re-derived here (RESEARCH.md Pitfall 7
 // — Android/iOS report video dimensions differently, and Android drops
 // rotation, which is exactly what repairAspect exists to patch, per GEO-04).
 import { useMemo, useState } from 'react';
 import type { LayoutChangeEvent } from 'react-native';
 
-import { contentRect, repairAspect, type ContentRect } from '@vilancer/protocol/geometry';
-import type { FrameDims } from '@vilancer/protocol/core';
+import { contentRect, repairAspect, type ContentRect } from '@vilancer/scribble-protocol/geometry';
+import type { FrameDims } from '@vilancer/scribble-protocol/core';
 
 export interface UseContentRectResult {
   /** `null` until `frameDims` is known — never a zero-rect placeholder, so a

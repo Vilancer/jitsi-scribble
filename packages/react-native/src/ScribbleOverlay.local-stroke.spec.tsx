@@ -18,7 +18,7 @@ import type { LayoutChangeEvent } from 'react-native';
 import type {
   ScribbleTransport,
   TransportState,
-} from '@vilancer/protocol/transport';
+} from '@vilancer/scribble-protocol/transport';
 
 import type {
   LocalStrokeGestureCallbacks,

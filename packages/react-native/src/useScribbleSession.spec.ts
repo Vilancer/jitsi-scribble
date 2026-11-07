@@ -1,18 +1,18 @@
 import { act, renderHook } from '@testing-library/react-native';
 import { AppState } from 'react-native';
 
-import { encode } from '@vilancer/protocol/codec';
+import { encode } from '@vilancer/scribble-protocol/codec';
 import {
   MSG_END,
   MSG_PRESENCE,
   MSG_START,
   PROTOCOL_VERSION,
   RATE_CAPACITY,
-} from '@vilancer/protocol/core';
+} from '@vilancer/scribble-protocol/core';
 import type {
   ScribbleTransport,
   TransportState,
-} from '@vilancer/protocol/transport';
+} from '@vilancer/scribble-protocol/transport';
 
 import { useScribbleSession } from './useScribbleSession.js';
 

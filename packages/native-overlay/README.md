@@ -1,4 +1,4 @@
-# @vilancer/native-overlay
+# @vilancer/scribble-overlay
 
 The floating drawing pen that works outside your app (Android). While enabled, a round button floats
 over every app; tap it and the drawing tools fan out around it, draw over whatever is on screen, and

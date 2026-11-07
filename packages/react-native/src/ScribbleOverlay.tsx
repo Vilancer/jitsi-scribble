@@ -24,18 +24,18 @@ import {
 } from 'react-native-reanimated';
 import { Circle, G, Path, Svg } from 'react-native-svg';
 
-import type { Stroke, StrokeStyle } from '@vilancer/protocol/core';
-import { LOCAL_SENDER } from '@vilancer/protocol/core';
-import type { ContentRect } from '@vilancer/protocol/geometry';
-import { computeStrokeWidth, denormalize } from '@vilancer/protocol/geometry';
+import type { Stroke, StrokeStyle } from '@vilancer/scribble-protocol/core';
+import { LOCAL_SENDER } from '@vilancer/scribble-protocol/core';
+import type { ContentRect } from '@vilancer/scribble-protocol/geometry';
+import { computeStrokeWidth, denormalize } from '@vilancer/scribble-protocol/geometry';
 import {
   CASING_COLOUR,
   CASING_EXTRA_WIDTH_DP,
   CORE_WIDTH_DP,
   colourForParticipant,
   toolRecipe,
-} from '@vilancer/protocol/render';
-import { shapePoints, type Point2 } from '@vilancer/protocol/shapes';
+} from '@vilancer/scribble-protocol/render';
+import { shapePoints, type Point2 } from '@vilancer/scribble-protocol/shapes';
 
 import { useLocalStrokeGesture } from './gesture.js';
 import { useOptionalScribble, type ToolState } from './ScribbleProvider.js';

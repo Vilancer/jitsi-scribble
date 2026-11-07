@@ -9,9 +9,9 @@
   },
   "dependencies": {
     "@config-plugins/react-native-webrtc": "14.0.0",
-    "@vilancer/native-overlay": "workspace:*",
-    "@vilancer/protocol": "workspace:*",
-    "@vilancer/react-native": "workspace:*",
+    "@vilancer/scribble-overlay": "workspace:*",
+    "@vilancer/scribble-protocol": "workspace:*",
+    "@vilancer/scribble": "workspace:*",
     "@xmldom/xmldom": "0.8.13",
     "base-64": "1.0.0",
     "expo": "55.0.28",

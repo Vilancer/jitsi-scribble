@@ -20,21 +20,25 @@ not a whiteboard.
 
 | Package | What it is | Status |
 |---|---|---|
-| [`@vilancer/react-native`](packages/react-native) | `ScribbleProvider`, `ScribbleOverlay`, `ScribbleToolbar`, the `jitsi()` provider. Pure JS. | [![npm](https://img.shields.io/npm/v/@vilancer/react-native)](https://www.npmjs.com/package/@vilancer/react-native) |
-| [`@vilancer/native-overlay`](packages/native-overlay) | The floating out-of-app pen (Android Expo module). Optional. | [![npm](https://img.shields.io/npm/v/@vilancer/native-overlay)](https://www.npmjs.com/package/@vilancer/native-overlay) |
-| [`@vilancer/protocol`](packages/protocol) | Wire format, stroke store, geometry, shapes. Used by the other packages. | [![npm](https://img.shields.io/npm/v/@vilancer/protocol)](https://www.npmjs.com/package/@vilancer/protocol) |
-| [`@vilancer/web`](packages/web) | Renders the ink on jitsi-meet web (and so in Jibri recordings). | private |
+| [`@vilancer/scribble`](packages/react-native) | `ScribbleProvider`, `ScribbleOverlay`, `ScribbleToolbar`, the `jitsi()` provider. Pure JS. | [![npm](https://img.shields.io/npm/v/@vilancer/scribble)](https://www.npmjs.com/package/@vilancer/scribble) |
+| [`@vilancer/scribble-overlay`](packages/native-overlay) | The floating out-of-app pen (Android Expo module). Optional. | [![npm](https://img.shields.io/npm/v/@vilancer/scribble-overlay)](https://www.npmjs.com/package/@vilancer/scribble-overlay) |
+| [`@vilancer/scribble-protocol`](packages/protocol) | Wire format, stroke store, geometry, shapes. Used by the other packages. | [![npm](https://img.shields.io/npm/v/@vilancer/scribble-protocol)](https://www.npmjs.com/package/@vilancer/scribble-protocol) |
+| [`@vilancer/scribble-web`](packages/web) | Renders the ink on jitsi-meet web (and so in Jibri recordings). | private |
+
+> **Renamed in 0.2.0.** `@vilancer/react-native` → `@vilancer/scribble`,
+> `@vilancer/native-overlay` → `@vilancer/scribble-overlay`, `@vilancer/protocol` →
+> `@vilancer/scribble-protocol`. The old names stay at 0.1.0 and are deprecated.
 
 ## Install (Expo)
 
 ```sh
 npx expo install react-native-svg react-native-gesture-handler react-native-reanimated react-native-worklets
-npm install @vilancer/react-native @vilancer/protocol
+npm install @vilancer/scribble @vilancer/scribble-protocol
 # optional, Android: the floating pen outside the app
-npm install @vilancer/native-overlay
+npm install @vilancer/scribble-overlay
 ```
 
-`@vilancer/native-overlay` contains native code, so it needs a development build
+`@vilancer/scribble-overlay` contains native code, so it needs a development build
 (`npx expo run:android` or EAS), not Expo Go. It adds the `SYSTEM_ALERT_WINDOW` ("Display over
 other apps") permission to your app; the user grants it from system settings, which
 `requestPermission()` opens.
@@ -43,8 +47,8 @@ other apps") permission to your app; the user grants it from system settings, wh
 
 ```tsx
 import { useMemo, useState } from 'react';
-import { ScribbleOverlay, ScribbleProvider, ScribbleToolbar, jitsi, useScribble } from '@vilancer/react-native';
-import { useOutOfAppOverlay } from '@vilancer/native-overlay';
+import { ScribbleOverlay, ScribbleProvider, ScribbleToolbar, jitsi, useScribble } from '@vilancer/scribble';
+import { useOutOfAppOverlay } from '@vilancer/scribble-overlay';
 
 function CallScreen({ conference }) {
   // conference: the lib-jitsi-meet JitsiConference you joined
@@ -98,6 +102,9 @@ A transport provider is any object implementing `ScribbleTransport` (`send`, `su
 - **iOS** gets the in-app layer. An app can't draw over other apps on iOS; the floating pen isn't
   available there (`useOutOfAppOverlay().supported` is `false`). This is a deliberate, documented
   difference, not a gap that will be closed.
+- Some Android skins keep invisible system overlays above every app overlay. On ColorOS
+  (Oppo/Realme/OnePlus), the floating assistant reserves a small area near the top-left; that
+  patch can't be drawn on. System bars can't be drawn on either.
 - The floating layer is captured in the screen share by default, so the other side also sees ink
   in the video. `hideInkFromScreenShare` / `hideControlsFromScreenShare` use `FLAG_SECURE`, which
   on some devices blacks out the whole capture; test on your target devices before turning it on.

@@ -1,6 +1,6 @@
 // <ScribbleProvider>: one annotation session for a call, shared by every
 // surface under it — <ScribbleOverlay> on the video, <ScribbleToolbar>, and
-// the optional out-of-app overlay (@vilancer/native-overlay).
+// the optional out-of-app overlay (@vilancer/scribble-overlay).
 //
 // The call SDK is plugged in through a *transport provider*: any object
 // implementing ScribbleTransport. `jitsi(conference)` (./providers/jitsi) is
@@ -21,8 +21,8 @@ import {
   SCRIBBLE_WIDTHS,
   type ScribbleShape,
   type ScribbleTool,
-} from '@vilancer/protocol/render';
-import type { ScribbleTransport } from '@vilancer/protocol/transport';
+} from '@vilancer/scribble-protocol/render';
+import type { ScribbleTransport } from '@vilancer/scribble-protocol/transport';
 
 import { ScribbleClient, type ScribbleClientOptions } from './client.js';
 

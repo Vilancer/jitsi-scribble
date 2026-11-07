@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react-native';
 import type { LayoutChangeEvent } from 'react-native';
 
-import { contentRect } from '@vilancer/protocol/geometry';
+import { contentRect } from '@vilancer/scribble-protocol/geometry';
 
 import { useContentRect } from './contentRect.native.js';
 

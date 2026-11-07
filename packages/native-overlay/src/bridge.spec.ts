@@ -1,8 +1,8 @@
 import { AppState } from 'react-native';
-import { createMemoryTransportPair } from '@vilancer/protocol/transport';
-import { decode } from '@vilancer/protocol/codec';
-import { MSG_CLEAR, MSG_END, MSG_MOVE, MSG_PRESENCE, MSG_START } from '@vilancer/protocol/core';
-import { ScribbleClient } from '@vilancer/react-native';
+import { createMemoryTransportPair } from '@vilancer/scribble-protocol/transport';
+import { decode } from '@vilancer/scribble-protocol/codec';
+import { MSG_CLEAR, MSG_END, MSG_MOVE, MSG_PRESENCE, MSG_START } from '@vilancer/scribble-protocol/core';
+import { ScribbleClient } from '@vilancer/scribble';
 
 import { OutOfAppBridge, type OverlayNative } from './bridge.js';
 import type { LocalStrokeEvent } from './native.js';

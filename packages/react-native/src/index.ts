@@ -14,7 +14,7 @@ export type { ScribbleClientOptions, InboundListener, PresenceListener } from '.
 export { jitsi } from './providers/jitsi.js';
 export type { JitsiProviderOptions } from './providers/jitsi.js';
 export { MemoryTransport, createMemoryTransportPair } from './providers/memory.js';
-export type { ScribbleTransport, TransportState } from '@vilancer/protocol/transport';
+export type { ScribbleTransport, TransportState } from '@vilancer/scribble-protocol/transport';
 
 // Lower-level pieces (Phase 5 API, still supported)
 export { fromJitsiConference } from './fromJitsiConference.js';

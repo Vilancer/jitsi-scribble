@@ -2,9 +2,9 @@ import { act, fireEvent, render } from '@testing-library/react-native';
 import type { LayoutChangeEvent } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
 
-import { encode } from '@vilancer/protocol/codec';
-import { MSG_START, PROTOCOL_VERSION } from '@vilancer/protocol/core';
-import type { ScribbleTransport, TransportState } from '@vilancer/protocol/transport';
+import { encode } from '@vilancer/scribble-protocol/codec';
+import { MSG_START, PROTOCOL_VERSION } from '@vilancer/scribble-protocol/core';
+import type { ScribbleTransport, TransportState } from '@vilancer/scribble-protocol/transport';
 
 import { ScribbleOverlay } from './ScribbleOverlay.js';
 

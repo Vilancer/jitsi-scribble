@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "devDependencies": {
-    "@vilancer/web": "workspace:*"
+    "@vilancer/scribble-web": "workspace:*"
   },
   "nx": {
     "targets": {

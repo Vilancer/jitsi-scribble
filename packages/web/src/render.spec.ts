@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { StrokeStore } from '@vilancer/protocol/core';
+import { StrokeStore } from '@vilancer/scribble-protocol/core';
 
 import { mountRenderer } from './render.js';
 

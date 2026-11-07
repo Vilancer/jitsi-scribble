@@ -3,10 +3,10 @@
 // logic itself. Mounts as a SIBLING of #largeVideo inside
 // #largeVideoContainer (ARCHITECTURE.md anti-pattern #10) — never wraps,
 // restyles, or re-parents the video element it reads geometry from.
-import type { ContentRect } from '@vilancer/protocol/geometry';
-import { computeStrokeWidth, denormalize } from '@vilancer/protocol/geometry';
-import type { Stroke, StrokeStore } from '@vilancer/protocol/core';
-import { CASING_COLOUR, CASING_EXTRA_WIDTH_DP, CORE_WIDTH_DP, colourForParticipant, toolRecipe } from '@vilancer/protocol/render';
+import type { ContentRect } from '@vilancer/scribble-protocol/geometry';
+import { computeStrokeWidth, denormalize } from '@vilancer/scribble-protocol/geometry';
+import type { Stroke, StrokeStore } from '@vilancer/scribble-protocol/core';
+import { CASING_COLOUR, CASING_EXTRA_WIDTH_DP, CORE_WIDTH_DP, colourForParticipant, toolRecipe } from '@vilancer/scribble-protocol/render';
 
 import { observeContentRectChanges } from './jitsiMeetWeb.js';
 
