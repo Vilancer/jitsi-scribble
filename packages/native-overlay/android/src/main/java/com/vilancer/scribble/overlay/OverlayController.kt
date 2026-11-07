@@ -273,7 +273,10 @@ class OverlayController(
    * starting to draw. Tuck the ring away and hand the gesture to the ink
    * layer. */
   override fun onPassThrough(e: MotionEvent) {
-    if (e.actionMasked == MotionEvent.ACTION_DOWN) menu?.alpha = 0f
+    if (e.actionMasked == MotionEvent.ACTION_DOWN) {
+      menu?.alpha = 0f
+      canvas?.dismissTapOnly = true
+    }
     canvas?.onTouchEvent(e)
     if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) {
       setMenuOpen(false, animate = false)
@@ -282,7 +285,10 @@ class OverlayController(
 
   /** The user started drawing straight on the ink layer: put the ring away. */
   override fun onTouchStart() {
-    if (menuOpen) setMenuOpen(false)
+    if (menuOpen) {
+      canvas?.dismissTapOnly = true
+      setMenuOpen(false)
+    }
   }
 
   override fun onBubbleTap() {

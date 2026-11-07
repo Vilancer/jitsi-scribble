@@ -56,6 +56,18 @@ class InkCanvasView(
   private var downAt = 0L
   private var maxTravel = 0f
   private val pending = ArrayList<Float>()
+  // The "stroke started" message is held back until the touch is known to be
+  // a drag (moved, or held), so a tap that only closes the tool ring never
+  // reaches the other side.
+  private var beganRemote = false
+  private var downU = 0f
+  private var downV = 0f
+  private var downStyle = InkStyle()
+
+  /** Set for the current gesture by the controller when the tool ring was
+   * open: a quick tap then only closes the ring instead of drawing a
+   * "look here" circle. A drag still draws. */
+  var dismissTapOnly = false
   private val main = Handler(Looper.getMainLooper())
   private val flushRunnable = Runnable { flushPending() }
   private var flushScheduled = false
@@ -176,11 +188,13 @@ class InkCanvasView(
         val s = InkStroke(localKey(id), true, style.color, style.widthDp, style.tool, now)
         enforceCaps()
         strokes[s.key] = s
+        beganRemote = false
+        pending.clear()
         if (activeShape == null) {
-          val u = event.rawX / displayW
-          val v = event.rawY / displayH
-          s.add(u, v, now)
-          listener.onLocalBegin(id, u, v, style.copy(), displayW, displayH)
+          downU = event.rawX / displayW
+          downV = event.rawY / displayH
+          downStyle = style.copy()
+          s.add(downU, downV, now)
         } else {
           s.add(event.rawX / displayW, event.rawY / displayH, now)
         }
@@ -203,7 +217,8 @@ class InkCanvasView(
             addLocalPoint(s, event.getHistoricalX(i) + dx, event.getHistoricalY(i) + dy, now)
           }
           addLocalPoint(s, event.rawX, event.rawY, now)
-          scheduleFlush()
+          if (!beganRemote && (maxTravel >= TAP_SLOP_DP * density || now - downAt >= TAP_MAX_MS)) beginRemote(id)
+          if (beganRemote) scheduleFlush()
         }
         invalidate()
       }
@@ -211,7 +226,21 @@ class InkCanvasView(
         val id = activeId ?: return true
         val s = strokes[localKey(id)]
         val shape = activeShape
-        if (shape == null) flushPending()
+        val tap = maxTravel < TAP_SLOP_DP * density && now - downAt < TAP_MAX_MS
+        val dismissOnly = dismissTapOnly
+        dismissTapOnly = false
+        if (shape == null && tap && dismissOnly) {
+          // Just closing the tool ring: draw nothing, send nothing.
+          activeId = null
+          pending.clear()
+          s?.let { strokes.remove(it.key) }
+          invalidate()
+          return true
+        }
+        if (shape == null) {
+          if (!beganRemote) beginRemote(id)
+          flushPending()
+        }
         activeId = null
         if (s == null) return true
         if (shape != null) {
@@ -227,7 +256,6 @@ class InkCanvasView(
             listener.onLocalShape(id, flat, style.copy(), displayW, displayH)
           }
         } else {
-          val tap =maxTravel < 10f * density && now - downAt < 300
           s.kind = if (tap) "tap" else "stroke"
           s.endedAt = now
           listener.onLocalEnd(id, s.kind)
@@ -252,6 +280,11 @@ class InkCanvasView(
     pending.add(v)
   }
 
+  private fun beginRemote(id: String) {
+    beganRemote = true
+    listener.onLocalBegin(id, downU, downV, downStyle, displayW, displayH)
+  }
+
   private fun scheduleFlush() {
     if (flushScheduled) return
     flushScheduled = true
@@ -262,6 +295,7 @@ class InkCanvasView(
     main.removeCallbacks(flushRunnable)
     flushScheduled = false
     val id = activeId
+    if (!beganRemote) return // keep buffering until the stroke is announced
     if (pending.isEmpty() || id == null) {
       pending.clear()
       return
@@ -274,6 +308,8 @@ class InkCanvasView(
 
   companion object {
     private const val MAX_STROKES = 24
+    private const val TAP_SLOP_DP = 10f
+    private const val TAP_MAX_MS = 300L
     private const val FLUSH_MS = 32L
     private const val DEFAULT_REMOTE_COLOR = 0xFF0A84FF.toInt()
   }
