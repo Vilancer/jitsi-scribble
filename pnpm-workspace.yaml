@@ -14,3 +14,10 @@ allowBuilds:
   esbuild: true
   nx: true
   unrs-resolver: true
+# lib-jitsi-meet is distributed as a GitHub release tarball and itself
+# depends on a strophe.js fork by URL; only the example app installs it.
+blockExoticSubdeps: false
+# Same fixes Genius_Native ships (API<31 orTimeout crash, iconless FGS
+# notification, MediaProjection stop deadlock). Example app only.
+patchedDependencies:
+  react-native-webrtc@124.0.8: patches/react-native-webrtc@124.0.8.patch

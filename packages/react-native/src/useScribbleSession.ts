@@ -37,16 +37,13 @@
 // network-controlled payload content) — the decoded frame's own `from`
 // field is never read for presence purposes anywhere in this file.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState } from 'react-native';
 
-import { decode } from '@vilancer/protocol/codec';
 import {
   LOCAL_SENDER,
-  MSG_PRESENCE,
-  PROTOCOL_VERSION,
   StrokeStore,
   type FrameDims,
   type Stroke,
+  type StrokeStyle,
 } from '@vilancer/protocol/core';
 import { normalize } from '@vilancer/protocol/geometry';
 import type { ScribbleTransport } from '@vilancer/protocol/transport';
@@ -55,6 +52,7 @@ import {
   useContentRect,
   type UseContentRectResult,
 } from './contentRect.native.js';
+import { ScribbleClient } from './client.js';
 import {
   fromJitsiConference,
   type FromJitsiConferenceOptions,
@@ -85,6 +83,9 @@ export interface UseScribbleSessionOptions {
    * ScribbleTransport, since MemoryTransport's constructor signature does
    * not match what fromJitsiConference expects. */
   transport?: ScribbleTransport;
+  /** A shared, already-started session (what <ScribbleProvider> passes
+   * down). Takes precedence over `transport` and `conference`. */
+  client?: ScribbleClient | null;
   /** The video content the local drawer is currently looking at — passed
    * straight through to contentRect.native.ts's useContentRect; `undefined`
    * until the host knows it. 05-REVIEW.md CR-01 (re-review): this hook does
@@ -139,7 +140,7 @@ export interface UseScribbleSessionResult {
    * onLocalSample/onLocalEnd call these via runOnJS. `appendLocal` takes
    * raw overlay-view pixel coordinates and normalizes them against this
    * session's own contentRect before calling store.appendLocal. */
-  beginLocal: (id: string) => void;
+  beginLocal: (id: string, style?: StrokeStyle) => void;
   appendLocal: (id: string, x: number, y: number) => void;
   endLocal: (id: string, kind?: 'tap' | 'stroke') => void;
   /** This session's own local participant id, once known (empty string
@@ -150,6 +151,7 @@ export interface UseScribbleSessionResult {
 interface SessionHandles {
   transport: ScribbleTransport;
   store: StrokeStore;
+  client: ScribbleClient;
 }
 
 export function useScribbleSession(
@@ -159,6 +161,7 @@ export function useScribbleSession(
     conference,
     transportOptions,
     transport: injectedTransport,
+    client: injectedClient,
     frameDims,
     onRemoteStrokeStart,
     onRemoteTap,
@@ -237,134 +240,41 @@ export function useScribbleSession(
   onRemoteTapRef.current = onRemoteTap;
 
   useEffect(() => {
-    const transport =
-      injectedTransport ??
-      fromJitsiConference(conference, transportOptionsRef.current);
-    const store = new StrokeStore({ localId: transport.localId() });
-    // Plan 05-04 fix (Rule 1 - bug, found integrating ScribbleOverlay):
-    // StrokeStore's own lastTickNow defaults to 0 until the first tick(now)
-    // call. Without this seed, any stroke inserted (a remote Start, or a
-    // local beginLocal) BEFORE the RAF loop below fires its first real
-    // callback (~one frame after mount, deferred via requestAnimationFrame)
-    // gets createdAt/lastMoveAt stamped at 0 — epoch. The very first REAL
-    // tick(Date.now()) that follows then computes `now - lastMoveAt` as
-    // Date.now() itself (~10^12 ms), which is always >= STALE_MS, so
-    // computePhaseAndAlpha's stale-watchdog branch fires immediately and the
-    // stroke fades to 'dead' and is evicted before ever being visibly
-    // rendered — even though zero real wall-clock time has actually passed.
-    // Seeding the clock synchronously, before wiring transport.subscribe or
-    // scheduling the RAF loop, closes this race for both remote (Start
-    // frame arriving before the first RAF frame) and local (a touch
-    // beginning before the first RAF frame) strokes.
-    store.tick(Date.now());
-    sessionRef.current = { transport, store };
+    // `client: null` means "inside a provider whose call hasn't started":
+    // wait for the real client rather than building a throwaway session.
+    if (injectedClient === null) return undefined;
+    // A client handed in by <ScribbleProvider> is shared with other surfaces
+    // (toolbar, out-of-app overlay) and owned by the provider: this hook
+    // listens to it but never starts or stops it.
+    const owned = !injectedClient;
+    const client =
+      injectedClient ??
+      new ScribbleClient(
+        injectedTransport ?? fromJitsiConference(conference, transportOptionsRef.current),
+      );
+    const { transport, store } = client;
+    sessionRef.current = { transport, store, client };
     setLocalId(transport.localId());
     prevStrokeSnapshotRef.current = new Map();
-    setRemotePresenceBySender(new Map());
+    setRemotePresenceBySender(client.getPresence());
 
-    let destroyed = false;
+    const stopClient = owned ? client.start() : null;
+    const unsubscribePresence = client.onPresence((bySender) => setRemotePresenceBySender(bySender));
 
-    // Plan 05-04 fix (Rule 2 - missing critical functionality, found
-    // integrating ScribbleOverlay/the end-to-end MemoryTransport test):
-    // PROTO-03's own onOutbound(fn) hook exists precisely so a host glue
-    // layer can wire store.onOutbound(frame => transport.send(frame)) — see
-    // protocol/core/index.ts's own doc comment naming exactly this call —
-    // but this file never called it. Without this wire-up, beginLocal/
-    // appendLocal/endLocal's coalesced Start/Move/End WireFrames were
-    // computed and handed to emitOutbound(), then dropped: nothing ever
-    // reached transport.send(), so a locally-authored stroke NEVER crossed
-    // the wire to a remote peer — the single most basic requirement this
-    // whole library exists for (PROJECT.md's Core Value). Presence stays
-    // hand-built via transport.send() directly (D-02, unchanged) — this
-    // hook is for STROKE authoring frames only, never re-emitting anything
-    // apply() already ingested (T-03-03-01, StrokeStore's own contract).
-    const unsubscribeOutbound = store.onOutbound((frame) =>
-      transport.send(frame),
-    );
-
-    const unsubscribeTransport = transport.subscribe((from, payload) => {
-      // T-05-03 (CR-01 fix, 05-REVIEW.md): call apply() FIRST and
-      // unconditionally, before this listener's own decode() below, so
-      // checkRateLimit(from) — which runs as apply()'s very first statement,
-      // ahead of its own internal decode() — debits the per-sender token
-      // bucket for EVERY inbound payload, decodable or not. The original
-      // code decoded here first and returned early on decode failure, which
-      // meant malformed/undecodable payloads never reached apply() at all
-      // and were never rate-limited — the cheapest possible flood a hostile
-      // sender could mount. See this file's header comment above.
-      store.apply(payload, from);
-
-      const result = decode(payload);
-      if (!result.ok) return;
-
-      if (result.frame.t === MSG_PRESENCE) {
-        // Extracted into a local `const` before entering the setState
-        // updater closure below: TS's discriminated-union narrowing of a
-        // PROPERTY access (`result.frame`) does not carry across a nested
-        // function boundary, only narrowing of a plain variable does.
-        const vis = result.frame.vis;
-        // T-05-05: keyed by the trusted `from` ARGUMENT only — the frame's
-        // own `from` field is never read here.
-        setRemotePresenceBySender((prev) => {
-          const next = new Map(prev);
-          next.set(from, vis);
-          return next;
-        });
-      }
-    });
-
-    // mount.ts's own destroyed-flag reentrancy guard (WR-02's fix,
-    // 04-REVIEW.md) — load-bearing, copied verbatim rather than re-derived.
-    let rafId: number | null = null;
-    function frame(): void {
-      store.tick(Date.now());
-      if (!destroyed) rafId = requestAnimationFrame(frame);
-    }
-    rafId = requestAnimationFrame(frame);
-
-    // D-02/D-03: presence is hand-built and sent via transport.send()
-    // directly — never through store.beginLocal/appendLocal/endLocal.
-    const sendPresence = (vis: boolean): void => {
-      transport.send({
-        v: PROTOCOL_VERSION,
-        t: MSG_PRESENCE,
-        from: transport.localId(),
-        vis,
-      });
-    };
-    // Pitfall 2: send the initial frame BEFORE registering the listener, so
-    // a session that starts already backgrounded still announces its true
-    // initial visibility rather than waiting for the first transition.
-    // 'background' and 'inactive' both map to vis:false; only 'active'
-    // maps to vis:true (D-03's literal wording).
-    sendPresence(AppState.currentState === 'active');
-    const appStateSubscription = AppState.addEventListener(
-      'change',
-      (nextState) => {
-        sendPresence(nextState === 'active');
-      },
-    );
-
-    // D-04: diff store.subscribe() snapshots to fire onRemoteStrokeStart
-    // optimistically at first appearance, and onRemoteTap additionally
-    // once a stroke's kind transitions to 'tap' — never for from === localId.
+    // D-04: diff store snapshots to fire onRemoteStrokeStart at a remote
+    // stroke's first appearance, and onRemoteTap once its kind becomes
+    // 'tap'. Local strokes are tagged LOCAL_SENDER inside the store (never
+    // the real participant id), so that is the comparison to skip them.
+    // Callbacks are read through refs so an inline host callback is never
+    // stale (05-REVIEW WR-01).
     const unsubscribeStore = store.subscribe((strokes) => {
       const prev = prevStrokeSnapshotRef.current;
       const next = new Map<string, Stroke>();
       for (const stroke of strokes) {
         const key = `${stroke.from} ${stroke.id}`;
         next.set(key, stroke);
-        // A locally-authored stroke is tagged internally with
-        // StrokeStore's own LOCAL_SENDER sentinel, NEVER with
-        // transport.localId()'s real Jitsi participant id (protocol/core's
-        // own documented contract) — this is the correct comparison for
-        // "never fire for the local author's own strokes" (D-04).
         if (stroke.from === LOCAL_SENDER) continue;
         const prior = prev.get(key);
-        // 05-REVIEW.md WR-01: read through the ref, not the destructured
-        // closure variable, so this always invokes whichever callback the
-        // host most recently rendered with — see onRemoteStrokeStartRef's
-        // own comment above this effect.
         if (!prior) onRemoteStrokeStartRef.current?.(stroke.from);
         if (stroke.kind === 'tap' && prior?.kind !== 'tap')
           onRemoteTapRef.current?.(stroke.from);
@@ -373,32 +283,15 @@ export function useScribbleSession(
     });
 
     return (): void => {
-      destroyed = true;
-      if (rafId !== null) cancelAnimationFrame(rafId);
-      unsubscribeOutbound();
-      unsubscribeTransport();
+      unsubscribePresence();
       unsubscribeStore();
-      appStateSubscription.remove();
+      stopClient?.();
       sessionRef.current = null;
     };
-    // Deliberately NOT depending on onRemoteStrokeStart/onRemoteTap:
-    // constructing a NEW transport/store on every identity change to either
-    // callback would tear down and rebuild the entire session (including a
-    // fresh transport.subscribe registration on the real conference) far
-    // more often than intended. 05-REVIEW.md WR-01: both are now read
-    // through onRemoteStrokeStartRef/onRemoteTapRef at call time (see above
-    // this effect), NOT via closure, so — unlike an earlier version of this
-    // comment claimed — neither callback is required to stay referentially
-    // stable across the session's lifetime; a host's inline callback that
-    // closes over its own changing render-scope state is picked up on its
-    // very next invocation.
-    //
-    // 05-REVIEW.md CR-02: `transportOptions` is deliberately NOT in this
-    // list — see `transportOptionsRef`'s own comment above this effect.
-    // `conference`/`injectedTransport` stay, since their identity changing
-    // is the legitimate "the host swapped sessions" signal this effect must
-    // still react to.
-  }, [conference, injectedTransport]);
+    // conference / transport / client identity changing means the host
+    // swapped sessions: rebuild. transportOptions and the callbacks are read
+    // through refs on purpose (05-REVIEW CR-02, WR-01).
+  }, [conference, injectedTransport, injectedClient]);
 
   const getStrokesSnapshot = useCallback(
     (): readonly Stroke[] => sessionRef.current?.store.snapshot() ?? [],
@@ -414,11 +307,11 @@ export function useScribbleSession(
     [],
   );
 
-  const beginLocal = useCallback((id: string): void => {
+  const beginLocal = useCallback((id: string, style?: StrokeStyle): void => {
     const session = sessionRef.current;
     const dims = frameDimsRef.current;
     if (!session || !dims) return;
-    session.store.beginLocal(id, dims);
+    session.store.beginLocal(id, dims, style);
   }, []); // stable regardless of frameDims identity — see frameDimsRef above
 
   const appendLocal = useCallback(

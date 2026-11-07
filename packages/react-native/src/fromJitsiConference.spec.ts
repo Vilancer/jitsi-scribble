@@ -266,9 +266,7 @@ describe('fromJitsiConference — PROTO-10: no XMPP-fallback candidate', () => {
   });
 
   it("resolveSend()'s probe list contains no viaBridge=false candidate at the source level", () => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { readFileSync } = require('node:fs') as typeof import('node:fs');
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { join } = require('node:path') as typeof import('node:path');
     // Strip comments first: resolveSend()'s own docblock deliberately names
     // the unimplemented `sendMessage(payload, '', false)` extension point,

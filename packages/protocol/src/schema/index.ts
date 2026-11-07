@@ -21,6 +21,10 @@ import {
   MSG_START,
   PROTOCOL_VERSION,
   QUANT_STEPS,
+  STYLE_COLOUR_PATTERN,
+  STYLE_MAX_TOOL_LENGTH,
+  STYLE_MAX_WIDTH,
+  STYLE_MIN_WIDTH,
 } from '../wire-constants.js';
 
 /** Every member schema shares this exact-version literal — a frame whose `v`
@@ -51,6 +55,14 @@ const FrameDims = Schema.Struct({
   h: Schema.Number.pipe(Schema.positive(), Schema.finite()),
 });
 
+/** The optional stroke style on a Start frame: colour, width (dp) and tool.
+ * Must agree with codec.decode()'s checkStyle(). */
+const WireStyle = Schema.Struct({
+  c: Schema.String.pipe(Schema.pattern(STYLE_COLOUR_PATTERN)),
+  w: Schema.Number.pipe(Schema.finite(), Schema.between(STYLE_MIN_WIDTH, STYLE_MAX_WIDTH)),
+  k: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(STYLE_MAX_TOOL_LENGTH)),
+});
+
 const StartFrameSchema = Schema.Struct({
   v: Version,
   t: Schema.Literal(MSG_START),
@@ -58,6 +70,7 @@ const StartFrameSchema = Schema.Struct({
   id: Identifier,
   p: Point,
   frame: FrameDims,
+  st: Schema.optional(WireStyle),
 });
 
 const MoveFrameSchema = Schema.Struct({
@@ -106,6 +119,7 @@ export const WireFrameSchema = Schema.Union(
 );
 
 export type WireFrame = Schema.Schema.Type<typeof WireFrameSchema>;
+export type WireStyle = Schema.Schema.Type<typeof WireStyle>;
 export type StartFrame = Schema.Schema.Type<typeof StartFrameSchema>;
 export type MoveFrame = Schema.Schema.Type<typeof MoveFrameSchema>;
 export type EndFrame = Schema.Schema.Type<typeof EndFrameSchema>;

@@ -68,3 +68,83 @@ export const CASING_EXTRA_WIDTH_DP = 2.5 as const;
  * near-black, ~55%-alpha colour, drawn behind the participant-coloured core
  * so any core colour reads against any video content. */
 export const CASING_COLOUR = 'rgba(0, 0, 0, 0.55)' as const;
+
+/** The drawing tools, in toolbar order. Wire value is the string itself. */
+export const SCRIBBLE_TOOLS = ['pen', 'marker', 'pencil', 'crayon'] as const;
+export type ScribbleTool = (typeof SCRIBBLE_TOOLS)[number];
+
+/** The shapes the toolbar offers. A shape travels on the wire as an ordinary
+ * stroke (its outline as points), so receivers need no shape support. */
+export const SCRIBBLE_SHAPES = ['line', 'arrow', 'rect', 'ellipse'] as const;
+export type ScribbleShape = (typeof SCRIBBLE_SHAPES)[number];
+
+/** Toolbar colour swatches, iOS system colours (dark-mode variants, which
+ * read well on top of video): white, black, blue, green, yellow, red. */
+export const SCRIBBLE_COLOURS: readonly string[] = [
+  '#FFFFFF',
+  '#000000',
+  '#0A84FF',
+  '#30D158',
+  '#FFD60A',
+  '#FF453A',
+] as const;
+
+/** The bigger "more colours" grid behind the spectrum swatch: 12 hues by 5
+ * lightness steps, then a grey ramp. Pure data so every renderer shows the
+ * same grid. */
+export function colourGrid(): readonly (readonly string[])[] {
+  const hues = [0, 25, 45, 60, 90, 140, 175, 200, 220, 260, 290, 330];
+  const rows: string[][] = [];
+  for (const l of [0.8, 0.65, 0.5, 0.38, 0.26]) {
+    rows.push(hues.map((h) => hslToHex(h, l > 0.7 ? 0.75 : 0.9, l)));
+  }
+  const greys: string[] = [];
+  for (let i = 0; i < 12; i++) {
+    const g = Math.round(255 * (1 - i / 11));
+    greys.push(rgbToHex(g, g, g));
+  }
+  rows.push(greys);
+  return rows;
+}
+
+/** Stroke sizes (dp) offered by the toolbar's size picker. */
+export const SCRIBBLE_WIDTHS = [2, 3, 4, 6, 9, 12, 18] as const;
+
+/** Per-tool rendering recipe every renderer follows. Width is the style's
+ * width times `widthScale`; opacity multiplies the fade alpha. `casing`
+ * draws the dark outline behind the core (pen only: it keeps a thin line
+ * readable on any video). `texture` names how the edge is roughened. */
+export interface ToolRecipe {
+  readonly widthScale: number;
+  readonly opacity: number;
+  readonly casing: boolean;
+  readonly cap: 'round' | 'butt';
+  readonly texture: 'none' | 'grain' | 'wax';
+}
+
+export const TOOL_RECIPES: Readonly<Record<ScribbleTool, ToolRecipe>> = {
+  pen: { widthScale: 1, opacity: 1, casing: true, cap: 'round', texture: 'none' },
+  marker: { widthScale: 3, opacity: 0.45, casing: false, cap: 'butt', texture: 'none' },
+  pencil: { widthScale: 0.75, opacity: 0.9, casing: false, cap: 'round', texture: 'grain' },
+  crayon: { widthScale: 2, opacity: 0.85, casing: false, cap: 'round', texture: 'wax' },
+};
+
+/** The recipe for any tool string, falling back to the pen for a tool this
+ * version doesn't know. */
+export function toolRecipe(tool: string | undefined): ToolRecipe {
+  return (tool && (TOOL_RECIPES as Record<string, ToolRecipe>)[tool]) || TOOL_RECIPES.pen;
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  const h = (n: number): string => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
+  return `#${h(r)}${h(g)}${h(b)}`.toUpperCase();
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number): number => {
+    const k = (n + h / 30) % 12;
+    return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+  };
+  return rgbToHex(f(0) * 255, f(8) * 255, f(4) * 255);
+}

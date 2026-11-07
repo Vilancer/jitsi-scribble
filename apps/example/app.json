@@ -1,14 +1,32 @@
 {
   "expo": {
-    "name": "jitsi-scribble-example",
+    "name": "jitsi-scribble",
     "slug": "jitsi-scribble-example",
     "scheme": "jitsi-scribble-example",
-    "version": "0.0.1",
+    "version": "0.1.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "android": {
-      "package": "com.vilancer.jitsiscribbleexample"
-    }
+      "package": "com.vilancer.jitsiscribbleexample",
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION",
+        "android.permission.POST_NOTIFICATIONS"
+      ]
+    },
+    "plugins": [
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "cameraPermission": "jitsi-scribble uses the camera only if you turn it on in a call.",
+          "microphonePermission": "jitsi-scribble uses the microphone only if you turn it on in a call."
+        }
+      ],
+      "./plugins/withAndroidScreenShare"
+    ]
   }
 }

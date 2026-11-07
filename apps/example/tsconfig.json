@@ -6,10 +6,13 @@
   "include": ["**/*.ts", "**/*.tsx"],
   "references": [
     {
+      "path": "../../packages/react-native"
+    },
+    {
       "path": "../../packages/protocol"
     },
     {
-      "path": "../../packages/react-native"
+      "path": "../../packages/native-overlay"
     }
   ]
 }
