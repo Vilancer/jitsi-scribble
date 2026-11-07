@@ -44,6 +44,9 @@ await page.waitForFunction(() => Boolean(window.APP?.store?.getState()?.['featur
   timeout: 60000,
 });
 log('joined', { room: ROOM });
+// Make sure the fake camera is actually sending, so a phone viewer has a
+// video to annotate.
+await page.evaluate(() => window.APP?.conference?.muteVideo?.(false)).catch(() => {});
 await page.addScriptTag({ path: BUNDLE });
 const localId = await page.evaluate(() => {
   const conference = window.APP.store.getState()['features/base/conference'].conference;
@@ -87,7 +90,7 @@ while (Date.now() - started < DURATION) {
   const rx = await page.evaluate(() => window.__rx.splice(0));
   for (const r of rx) {
     const p = typeof r.payload === 'string' ? JSON.parse(r.payload) : r.payload;
-    log('rx', { from: r.from, t: p?.t, id: p?.id, st: p?.st, n: p?.pts?.length, kind: p?.kind, vis: p?.vis });
+    log('rx', { from: r.from, type: p?.t, id: p?.id, st: p?.st, n: p?.pts?.length, kind: p?.kind, vis: p?.vis });
     if (p?.t === 'e') {
       await page.screenshot({ path: resolve(SHOTS, `rx-${String(++shot).padStart(3, '0')}.png`) });
     }

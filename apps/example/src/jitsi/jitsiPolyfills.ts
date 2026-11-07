@@ -129,6 +129,9 @@ LogBox.ignoreLogs([
   /mod_turncredentials/,
   /findAll error: :scope>services>service/,
   /Local storage is disabled/,
+  // A frame sent before the bridge channel opens; jitsi-scribble's transport
+  // drops it and recovers when the channel opens.
+  /Bridge Channel send: no opened channel/,
 ]);
 
 export {};

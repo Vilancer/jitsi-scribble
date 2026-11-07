@@ -96,6 +96,7 @@ class OverlayController(
     style = opts.style.copy()
     if (showing) {
       applyOptions()
+      emitState()
       return true
     }
     val size = displaySize()

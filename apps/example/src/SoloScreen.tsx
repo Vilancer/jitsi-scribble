@@ -87,7 +87,8 @@ function SoloBody({ ghost, onLeave }: { ghost: ScribbleClient; onLeave: () => vo
             {'Tap Draw for the in-app tools, or turn on the floating pen and switch to any other app.'}
           </Text>
         </View>
-        <ScribbleOverlay frameDims={stage} />
+        {/* While the floating layer is up it draws remote ink itself. */}
+        <ScribbleOverlay frameDims={stage} receiveAnnotations={!overlay.visible} />
         {drawing && (
           <View style={styles.toolbarDock}>
             <ScribbleToolbar />

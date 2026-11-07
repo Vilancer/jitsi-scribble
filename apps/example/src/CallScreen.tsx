@@ -67,7 +67,7 @@ function CallBody({ call, room, onLeave }: { call: JitsiCall; room: string; onLe
                 setFrameDims({ w: e.nativeEvent.width, h: e.nativeEvent.height })
               }
             />
-            <ScribbleOverlay frameDims={frameDims} />
+            <ScribbleOverlay frameDims={frameDims} receiveAnnotations={!overlay.visible} />
           </>
         ) : (
           <View style={styles.center}>

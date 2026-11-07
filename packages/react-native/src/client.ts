@@ -96,6 +96,11 @@ export class ScribbleClient {
     // session that starts in the background still says so.
     this.sendPresence(true);
     const appStateSubscription = AppState.addEventListener('change', () => this.sendPresence(true));
+    // A presence frame sent before the call's data channel opened was
+    // dropped; announce again once the transport becomes ready.
+    const unsubscribeState = transport.onStateChange((state) => {
+      if (state === 'ready') this.sendPresence(true);
+    });
 
     this.teardown = (): void => {
       destroyed = true;
@@ -103,6 +108,7 @@ export class ScribbleClient {
       unsubscribeOutbound();
       unsubscribeTransport();
       appStateSubscription.remove();
+      unsubscribeState();
     };
     return () => this.stop();
   }

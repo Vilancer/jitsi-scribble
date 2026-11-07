@@ -90,6 +90,13 @@ export function useJitsiCall(server: string, room: string, displayName: string):
         if (cancelled) return;
         setStatus('joined');
         setConference(conf);
+        // Ask the bridge for the other side's video at full screen-share
+        // resolution (multi-stream bridges forward nothing until asked).
+        try {
+          conf.setReceiverVideoConstraint?.(1080);
+        } catch {
+          // older/newer lib-jitsi-meet: forwarding defaults apply
+        }
         count();
       });
       conf.on(CE.USER_JOINED, count);

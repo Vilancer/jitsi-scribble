@@ -116,9 +116,11 @@ export function useOutOfAppOverlay(options: OutOfAppOverlayOptions = {}): OutOfA
     if (!bridge) return;
     if (!wantVisible) {
       bridge.hide();
+      setVisible(false);
       return;
     }
-    void bridge.show({
+    void bridge
+      .show({
       hideInkFromCapture: hideInkFromScreenShare,
       hideControlsFromCapture: hideControlsFromScreenShare,
       holdMs: client?.options.holdMs ?? HOLD_MS,
@@ -128,7 +130,8 @@ export function useOutOfAppOverlay(options: OutOfAppOverlayOptions = {}): OutOfA
       widths: [...SCRIBBLE_WIDTHS],
       grid: colourGrid().map((row) => [...row]),
       style: toNativeStyle(toolsRef.current),
-    });
+      })
+      .then((ok) => setVisible(ok));
   }, [wantVisible, hideInkFromScreenShare, hideControlsFromScreenShare, client]);
 
   // Keep the native toolbar in step with in-app tool changes.
