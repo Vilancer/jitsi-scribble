@@ -3,7 +3,7 @@
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { Text } from 'react-native';
 
-import { createMemoryTransportPair } from '@vilancer/protocol/transport';
+import { createMemoryTransportPair } from '@vilancer/scribble-protocol/transport';
 
 import { ScribbleClient } from './client.js';
 import { ScribbleProvider, useScribble } from './ScribbleProvider.js';

@@ -1,13 +1,13 @@
-// The final, concrete proof that the whole @vilancer/protocol subpath
+// The final, concrete proof that the whole @vilancer/scribble-protocol subpath
 // surface — not just the root — is importable under plain node with zero
 // platform dependency (PKG-02), now that every subpath carries real Wave-2
 // content (Plans 02-02/02-03) instead of Plan 02-01's placeholder-only
 // wiring. Exercises one real call against codec, geometry, and transport.
 
-import { encode, decode } from '@vilancer/protocol/codec';
-import { contentRect, mapTouchToContent } from '@vilancer/protocol/geometry';
-import { MemoryTransport, createMemoryTransportPair } from '@vilancer/protocol/transport';
-import type { StartFrame } from '@vilancer/protocol/schema';
+import { encode, decode } from '@vilancer/scribble-protocol/codec';
+import { contentRect, mapTouchToContent } from '@vilancer/scribble-protocol/geometry';
+import { MemoryTransport, createMemoryTransportPair } from '@vilancer/scribble-protocol/transport';
+import type { StartFrame } from '@vilancer/scribble-protocol/schema';
 
 function fail(message: string): never {
   throw new Error(message);
@@ -61,8 +61,8 @@ if (received.payload !== wireMessage) fail('transport: received payload does not
 console.log('transport: OK');
 
 // --- 0.1.0: stroke style on the wire, and shapes ---
-import { shapePoints } from '@vilancer/protocol/shapes';
-import { toolRecipe } from '@vilancer/protocol/render';
+import { shapePoints } from '@vilancer/scribble-protocol/shapes';
+import { toolRecipe } from '@vilancer/scribble-protocol/render';
 
 const styled: StartFrame = { ...startFrame, st: { c: '#0A84FF', w: 6, k: 'marker' } };
 const styledBack = decode(encode(styled));

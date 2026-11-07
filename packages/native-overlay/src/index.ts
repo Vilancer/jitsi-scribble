@@ -1,6 +1,6 @@
-// @vilancer/native-overlay — the floating drawing button that works outside
+// @vilancer/scribble-overlay — the floating drawing button that works outside
 // the app (Android "display over other apps"). Optional companion to
-// @vilancer/react-native; on iOS and web every export is a safe no-op
+// @vilancer/scribble; on iOS and web every export is a safe no-op
 // (`supported: false`).
 export { useOutOfAppOverlay } from './useOutOfAppOverlay.js';
 export type { OutOfAppOverlayOptions, OutOfAppOverlayState } from './useOutOfAppOverlay.js';

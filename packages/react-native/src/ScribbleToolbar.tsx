@@ -14,7 +14,7 @@ import {
   SCRIBBLE_WIDTHS,
   type ScribbleShape,
   type ScribbleTool,
-} from '@vilancer/protocol/render';
+} from '@vilancer/scribble-protocol/render';
 
 import { useScribble } from './ScribbleProvider.js';
 

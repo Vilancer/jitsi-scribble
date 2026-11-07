@@ -11,8 +11,8 @@
 // spike verdict) will ship `AndroidOverlaySurface`/`IosPipSurface` as
 // siblings of this same interface — discovered at runtime via
 // `useScribbleSession({ surfaces })`, never imported from this package.
-import type { StrokeStore } from '@vilancer/protocol/core';
-import type { ContentRect } from '@vilancer/protocol/geometry';
+import type { StrokeStore } from '@vilancer/scribble-protocol/core';
+import type { ContentRect } from '@vilancer/scribble-protocol/geometry';
 
 /** The handle `present()` resolves with — call `dispose()` to tear down
  * whatever `present()` set up. */

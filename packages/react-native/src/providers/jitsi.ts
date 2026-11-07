@@ -9,7 +9,7 @@
 // `connection.initJitsiConference()` returns). This package never imports
 // lib-jitsi-meet itself: the adapter probes the conference object at runtime
 // and never throws, so a lib-jitsi-meet upgrade can't crash the call.
-import type { ScribbleTransport } from '@vilancer/protocol/transport';
+import type { ScribbleTransport } from '@vilancer/scribble-protocol/transport';
 
 import { fromJitsiConference, type FromJitsiConferenceOptions } from '../fromJitsiConference.js';
 

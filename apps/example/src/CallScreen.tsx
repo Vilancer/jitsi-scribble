@@ -5,14 +5,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { Text, View } from 'react-native';
 import { RTCView } from 'react-native-webrtc';
 
-import { useOutOfAppOverlay } from '@vilancer/native-overlay';
+import { useOutOfAppOverlay } from '@vilancer/scribble-overlay';
 import {
   ScribbleOverlay,
   ScribbleProvider,
   ScribbleToolbar,
   jitsi,
   useScribble,
-} from '@vilancer/react-native';
+} from '@vilancer/scribble';
 
 import { useJitsiCall, type JitsiCall } from './jitsi/useJitsiCall';
 import { ControlBar, ControlButton, OverlayPermissionBanner, styles } from './ui';

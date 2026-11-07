@@ -1,5 +1,5 @@
 // The phase's own capstone proof (05-04-PLAN.md Task 3): a real
-// createMemoryTransportPair (from @vilancer/protocol/transport, unchanged
+// createMemoryTransportPair (from @vilancer/scribble-protocol/transport, unchanged
 // since Phase 3) wired to a real "drawer" session and a real, MOUNTED
 // "viewer" <ScribbleOverlay> — no real device, no real lib-jitsi-meet, no
 // host app. This is the last consumer in the phase's own dependency chain
@@ -18,8 +18,8 @@ import { act, fireEvent, render, renderHook } from '@testing-library/react-nativ
 import type { LayoutChangeEvent } from 'react-native';
 import { processColor } from 'react-native';
 
-import { colourForParticipant } from '@vilancer/protocol/render';
-import { createMemoryTransportPair } from '@vilancer/protocol/transport';
+import { colourForParticipant } from '@vilancer/scribble-protocol/render';
+import { createMemoryTransportPair } from '@vilancer/scribble-protocol/transport';
 
 import { ScribbleOverlay } from './ScribbleOverlay.js';
 import { useScribbleSession } from './useScribbleSession.js';

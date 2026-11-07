@@ -18,7 +18,7 @@ import kotlin.random.Random
 
 /** The tool/colour/size the local user has picked in the toolbar. `shape` is
  * non-null while a shape (line, arrow, rect, ellipse) is selected instead of
- * a freehand tool. Mirrors `@vilancer/protocol/render`. */
+ * a freehand tool. Mirrors `@vilancer/scribble-protocol/render`. */
 data class InkStyle(
   var tool: String = "pen",
   var color: Int = Color.parseColor("#FF453A"),

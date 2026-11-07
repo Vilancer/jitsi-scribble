@@ -288,7 +288,7 @@ describe('fromJitsiConference — PROTO-10: no XMPP-fallback candidate', () => {
   });
 
   it("resolveSend()'s probe list contains no viaBridge=false candidate at the source level", () => {
-    // vitest runs with cwd at the package root (pnpm --filter @vilancer/web);
+    // vitest runs with cwd at the package root (pnpm --filter @vilancer/scribble-web);
     // import.meta.url is rewritten to a non-file scheme under this setup.
     const sourcePath = join(process.cwd(), 'src/transport/fromJitsiConference.ts');
     // Strip comments first: resolveSend()'s own docblock deliberately names

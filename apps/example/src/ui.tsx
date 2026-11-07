@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import type { OutOfAppOverlayState } from '@vilancer/native-overlay';
+import type { OutOfAppOverlayState } from '@vilancer/scribble-overlay';
 
 export function ControlButton({
   label,

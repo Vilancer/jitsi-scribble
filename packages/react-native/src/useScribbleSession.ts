@@ -44,9 +44,9 @@ import {
   type FrameDims,
   type Stroke,
   type StrokeStyle,
-} from '@vilancer/protocol/core';
-import { normalize } from '@vilancer/protocol/geometry';
-import type { ScribbleTransport } from '@vilancer/protocol/transport';
+} from '@vilancer/scribble-protocol/core';
+import { normalize } from '@vilancer/scribble-protocol/geometry';
+import type { ScribbleTransport } from '@vilancer/scribble-protocol/transport';
 
 import {
   useContentRect,

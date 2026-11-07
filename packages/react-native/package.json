@@ -1,6 +1,6 @@
 {
-  "name": "@vilancer/react-native",
-  "version": "0.1.0",
+  "name": "@vilancer/scribble",
+  "version": "0.2.0",
   "publishConfig": {
     "access": "public"
   },
@@ -37,7 +37,7 @@
     "exclude": "{**/test-support/**,**/*.spec.*,**/*.test.*}"
   },
   "dependencies": {
-    "@vilancer/protocol": "workspace:*"
+    "@vilancer/scribble-protocol": "workspace:*"
   },
   "peerDependencies": {
     "react": ">=19.0.0",

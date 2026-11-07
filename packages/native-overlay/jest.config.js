@@ -14,7 +14,7 @@ export default {
   // `.ts` — strip the extension so Jest's resolver falls through to
   // moduleFileExtensions and finds the real .ts/.tsx file.
   moduleNameMapper: {
-    // The @vilancer/react-native barrel pulls in reanimated, whose native
+    // The @vilancer/scribble barrel pulls in reanimated, whose native
     // worklets module can't load under Jest; reuse that package's mock.
     '^react-native-reanimated$': '<rootDir>/../react-native/__mocks__/react-native-reanimated.js',
     '^(\\.{1,2}/.*)\\.js$': '$1',
