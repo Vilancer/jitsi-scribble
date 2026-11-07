@@ -105,7 +105,7 @@ class InkCanvasView(
     kick()
   }
 
-  /** "all", "local", "remote", or a sender prefix (keys are "<from> <id>"). */
+  /** Local scope commands only: "all", "local" or "remote". */
   fun clear(scope: String) {
     val it = strokes.entries.iterator()
     while (it.hasNext()) {
@@ -114,10 +114,18 @@ class InkCanvasView(
         "all" -> true
         "local" -> s.local
         "remote" -> !s.local
-        else -> !s.local && s.key.startsWith("$scope ")
+        else -> false
       }
       if (drop) it.remove()
     }
+    invalidate()
+  }
+
+  /** Removes one remote participant's strokes (keys are "<from> <id>").
+   * Separate from clear() so a participant id is never read as a scope. */
+  fun clearSender(from: String) {
+    val prefix = "$from "
+    strokes.entries.removeAll { !it.value.local && it.key.startsWith(prefix) }
     invalidate()
   }
 

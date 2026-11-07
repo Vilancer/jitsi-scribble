@@ -69,3 +69,19 @@ describe('outbound Move chunking', () => {
     expect(b.snapshot()[0].points).toHaveLength(n);
   });
 });
+
+describe('apply() reports what it accepted', () => {
+  it('returns the frame when accepted and null when rate-limited or undecodable', async () => {
+    const { RATE_CAPACITY } = await import('./index.js');
+    const store = new StrokeStore();
+    store.tick(1000);
+    const frame = { v: 1, t: 's', from: 'x', id: 'a', p: [0, 0], frame: { w: 1, h: 1 } };
+    expect(store.apply(JSON.stringify(frame), 'x')).toMatchObject({ t: 's', id: 'a' });
+    expect(store.apply('not json', 'x')).toBeNull();
+    let accepted = 0;
+    for (let i = 0; i < RATE_CAPACITY + 20; i++) {
+      if (store.apply(JSON.stringify({ ...frame, id: `f${i}` }), 'x')) accepted++;
+    }
+    expect(accepted).toBeLessThan(RATE_CAPACITY);
+  });
+});

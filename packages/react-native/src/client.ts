@@ -11,7 +11,6 @@
 //   payload's `from` field (T-05-05).
 import { AppState } from 'react-native';
 
-import { decode } from '@vilancer/scribble-protocol/codec';
 import {
   MSG_CLEAR,
   MSG_PRESENCE,
@@ -77,10 +76,10 @@ export class ScribbleClient {
       // the app is in the background), and a stroke stamped with a stale
       // clock would count as already faded and be dropped on the next tick.
       store.tick(Date.now());
-      store.apply(payload, from);
-      const result = decode(payload);
-      if (!result.ok) return;
-      const frame = result.frame;
+      // Only frames the store accepted (rate limit + decode) go any further,
+      // so every surface fed from onInbound shares the same flood limit.
+      const frame = store.apply(payload, from);
+      if (!frame) return;
       if (frame.t === MSG_PRESENCE) {
         const next = new Map(this.presence);
         next.set(from, frame.vis);

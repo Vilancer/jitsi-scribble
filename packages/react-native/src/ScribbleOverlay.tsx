@@ -33,6 +33,7 @@ import {
   CASING_EXTRA_WIDTH_DP,
   CORE_WIDTH_DP,
   colourForParticipant,
+  DEFAULT_SCRIBBLE_COLOUR,
   toolRecipe,
 } from '@vilancer/scribble-protocol/render';
 import { shapePoints, type Point2 } from '@vilancer/scribble-protocol/shapes';
@@ -98,14 +99,15 @@ function visualFor(
   };
 }
 
-function pathDataFor(points: readonly (readonly [number, number])[], rect: ContentRect): string {
-  return points
-    .map(([u, v], index) => {
-      const { x, y } = denormalize(u, v, rect);
-      return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
-    })
-    .join(' ');
+function polylineD(points: readonly Point2[]): string {
+  return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
 }
+
+function pathDataFor(points: readonly (readonly [number, number])[], rect: ContentRect): string {
+  return polylineD(points.map(([u, v]) => denormalize(u, v, rect)));
+}
+
+type ShapeDrag = { shape: NonNullable<ToolState['shape']>; a: Point2; b: Point2 };
 
 function renderedOpacity(stroke: Stroke, isLocal: boolean, remotePresence: boolean): number {
   return stroke.alpha * (isLocal && !remotePresence ? PRESENCE_UNAWARE_OPACITY_CAP : 1);
@@ -266,7 +268,7 @@ export function ScribbleOverlay(props: ScribbleOverlayProps) {
   useEffect(() => {
     setStrokes(session.getStrokesSnapshot());
     return session.subscribeStrokes(setStrokes);
-  }, [session.subscribeStrokes, session.getStrokesSnapshot, session.localId]);
+  }, [session.subscribeStrokes, session.getStrokesSnapshot, session.client]);
 
   // The overlay's own box, for computeStrokeWidth's letterbox scaling.
   const [surfaceBox, setSurfaceBox] = useState<{ w: number; h: number } | null>(null);
@@ -285,13 +287,17 @@ export function ScribbleOverlay(props: ScribbleOverlayProps) {
 
   // Shape mode: remember the drag's start and current point, preview it,
   // and send the outline as one stroke on release.
-  const shapeDragRef = useRef<{ shape: NonNullable<ToolState['shape']>; a: Point2; b: Point2 } | null>(null);
-  const [shapePreview, setShapePreview] = useState<{ shape: NonNullable<ToolState['shape']>; a: Point2; b: Point2 } | null>(null);
+  const shapeDragRef = useRef<ShapeDrag | null>(null);
+  // The preview's path lives in a shared value, so dragging a shape doesn't
+  // re-render the whole overlay on every touch sample.
+  const shapePreviewD = useSharedValue('');
+  const [shapePreviewing, setShapePreviewing] = useState(false);
+  const shapePreviewProps = useAnimatedProps(() => ({ d: shapePreviewD.value }));
 
   const currentStyle = (): StrokeStyle | undefined => {
     const t = toolsRef.current;
     if (!t.color && !t.tool && !t.width) return undefined;
-    return { color: t.color ?? '#FF453A', width: t.width ?? CORE_WIDTH_DP, tool: t.tool ?? 'pen' };
+    return { color: t.color ?? DEFAULT_SCRIBBLE_COLOUR, width: t.width ?? CORE_WIDTH_DP, tool: t.tool ?? 'pen' };
   };
 
   const onLocalBegin = useCallback(
@@ -299,7 +305,8 @@ export function ScribbleOverlay(props: ScribbleOverlayProps) {
       const shape = toolsRef.current.shape;
       if (shape) {
         shapeDragRef.current = { shape, a: { x, y }, b: { x, y } };
-        setShapePreview(shapeDragRef.current);
+        shapePreviewD.value = '';
+        setShapePreviewing(true);
         return;
       }
       const id = `local-${strokeCounterRef.current++}`;
@@ -316,7 +323,7 @@ export function ScribbleOverlay(props: ScribbleOverlayProps) {
       const drag = shapeDragRef.current;
       if (drag) {
         drag.b = { x, y };
-        setShapePreview({ ...drag });
+        shapePreviewD.value = polylineD(shapePoints(drag.shape, drag.a, drag.b));
         return;
       }
       const id = currentLocalIdRef.current;
@@ -330,7 +337,7 @@ export function ScribbleOverlay(props: ScribbleOverlayProps) {
       const drag = shapeDragRef.current;
       if (drag) {
         shapeDragRef.current = null;
-        setShapePreview(null);
+        setShapePreviewing(false);
         if (kind === 'stroke' && Math.hypot(drag.b.x - drag.a.x, drag.b.y - drag.a.y) >= 12) {
           const id = `local-${strokeCounterRef.current++}`;
           session.beginLocal(id, currentStyle());
@@ -349,6 +356,7 @@ export function ScribbleOverlay(props: ScribbleOverlayProps) {
 
   const { gesture, pathString } = useLocalStrokeGesture({ onLocalBegin, onLocalSample, onLocalEnd });
   const { contentRect, remotePresence } = session;
+  const previewRecipe = toolRecipe(tools.tool);
 
   return (
     <View
@@ -386,15 +394,13 @@ export function ScribbleOverlay(props: ScribbleOverlayProps) {
               />
             );
           })}
-        {shapePreview && (
-          <Path
+        {shapePreviewing && (
+          <AnimatedPath
             testID="scribble-shape-preview"
-            d={shapePoints(shapePreview.shape, shapePreview.a, shapePreview.b)
-              .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`)
-              .join(' ')}
-            stroke={tools.color ?? '#FF453A'}
-            strokeWidth={(tools.width ?? CORE_WIDTH_DP) * toolRecipe(tools.tool).widthScale}
-            strokeOpacity={toolRecipe(tools.tool).opacity}
+            animatedProps={shapePreviewProps}
+            stroke={tools.color ?? DEFAULT_SCRIBBLE_COLOUR}
+            strokeWidth={(tools.width ?? CORE_WIDTH_DP) * previewRecipe.widthScale}
+            strokeOpacity={previewRecipe.opacity}
             strokeLinecap="round"
             strokeLinejoin="round"
             fill="none"

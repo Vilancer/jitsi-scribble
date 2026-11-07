@@ -25,3 +25,13 @@ describe('colourForParticipant', () => {
     expect(colours.size).toBeGreaterThan(1);
   });
 });
+
+describe('toolRecipe', () => {
+  it('falls back to the pen for names that exist on Object.prototype', async () => {
+    const { toolRecipe, TOOL_RECIPES } = await import('./index.js');
+    for (const name of ['constructor', 'toString', '__proto__', 'hasOwnProperty', 'nope']) {
+      expect(toolRecipe(name)).toBe(TOOL_RECIPES.pen);
+    }
+    expect(toolRecipe('marker')).toBe(TOOL_RECIPES.marker);
+  });
+});

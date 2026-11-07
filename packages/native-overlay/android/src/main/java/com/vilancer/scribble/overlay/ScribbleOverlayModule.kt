@@ -130,6 +130,10 @@ class ScribbleOverlayModule : Module() {
       onMain { controller?.clear(scope) }
     }
 
+    Function("clearSender") { from: String ->
+      onMain { controller?.clearSender(from) }
+    }
+
     OnDestroy {
       val c = controller
       controller = null

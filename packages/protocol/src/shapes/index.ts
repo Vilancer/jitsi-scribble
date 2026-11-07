@@ -26,8 +26,6 @@ const ARROW_BARB_ANGLE = (28 * Math.PI) / 180;
  */
 export function shapePoints(shape: ScribbleShape, a: Point2, b: Point2): Point2[] {
   switch (shape) {
-    case 'line':
-      return [a, b];
     case 'arrow': {
       const dx = b.x - a.x;
       const dy = b.y - a.y;
@@ -41,15 +39,8 @@ export function shapePoints(shape: ScribbleShape, a: Point2, b: Point2): Point2[
       });
       return [a, b, barb(1), b, barb(-1)];
     }
-    case 'rect': {
-      return [
-        { x: a.x, y: a.y },
-        { x: b.x, y: a.y },
-        { x: b.x, y: b.y },
-        { x: a.x, y: b.y },
-        { x: a.x, y: a.y },
-      ];
-    }
+    case 'rect':
+      return [a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }, a];
     case 'ellipse': {
       const cx = (a.x + b.x) / 2;
       const cy = (a.y + b.y) / 2;
@@ -62,6 +53,7 @@ export function shapePoints(shape: ScribbleShape, a: Point2, b: Point2): Point2[
       }
       return pts;
     }
+    case 'line':
     default:
       return [a, b];
   }

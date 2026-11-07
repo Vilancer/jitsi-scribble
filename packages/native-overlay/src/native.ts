@@ -48,6 +48,7 @@ declare class ScribbleOverlayNative extends NativeModule<OverlayEvents> {
   remoteAppend(key: string, points: number[]): void;
   remoteEnd(key: string, kind: string | null): void;
   clear(scope: string): void;
+  clearSender(from: string): void;
 }
 
 export const Native: ScribbleOverlayNative | null =

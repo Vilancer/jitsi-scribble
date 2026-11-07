@@ -645,15 +645,19 @@ export class StrokeStore {
    *   is silently ignored — unlike `move`, no stroke is synthesized).
    * `MSG_CLEAR`/`MSG_PRESENCE`: handled in Task 3.
    *
+   * Returns the decoded frame when it was accepted (passed the rate limit
+   * and decoded), or `null` when it was dropped, so callers that fan frames
+   * out further (the out-of-app overlay) honour the same limit.
+   *
    * Note (T-03-03-01): this method NEVER calls emitOutbound or flushPending
    * — a remote-originated stroke is never re-broadcast back onto the wire
    * by this store, regardless of how many tick() calls follow.
    */
-  apply(payload: unknown, from: string): void {
-    if (!this.checkRateLimit(from)) return;
+  apply(payload: unknown, from: string): WireFrame | null {
+    if (!this.checkRateLimit(from)) return null;
 
     const result = decode(payload);
-    if (!result.ok) return;
+    if (!result.ok) return null;
     const frame = result.frame;
 
     switch (frame.t) {
@@ -688,7 +692,7 @@ export class StrokeStore {
           }),
         );
         this.notify();
-        return;
+        return frame;
       }
 
       case MSG_MOVE: {
@@ -730,7 +734,7 @@ export class StrokeStore {
           }),
         );
         this.notify();
-        return;
+        return frame;
       }
 
       case MSG_END: {
@@ -745,7 +749,7 @@ export class StrokeStore {
           }),
         );
         this.notify();
-        return;
+        return frame;
       }
 
       case MSG_CLEAR: {
@@ -759,12 +763,12 @@ export class StrokeStore {
         // is the only safe routing for remote-ingest (CR-01).
         // clearBySender() already calls notify().
         this.clearBySender(from);
-        return;
+        return frame;
       }
 
       case MSG_PRESENCE:
         // no-op — AWARE-01/02/03 consume Presence in Phase 5, not here
-        return;
+        return frame;
     }
   }
 

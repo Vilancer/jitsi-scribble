@@ -1,6 +1,7 @@
-// The shared render-policy math (D-01) — identity->colour hash and the
-// casing/core stroke-width constants every renderer (web now, RN in Phase 5,
-// native-overlay in Phase 7) imports unchanged. See
+// Shared render policy for every renderer (web, React Native in-app, and the
+// Android native overlay keeps a Kotlin copy): participant colours, the
+// casing/core stroke widths, the drawing tools and their recipes, the
+// toolbar palette and sizes. See
 // .planning/research/FEATURES.md "Fade timing, stroke width, and colour:
 // concrete numbers" for the numbers themselves (this file locates them, it
 // does not invent them) and .planning/phases/04-jitsi-transport-adapter-and-web-renderer/04-CONTEXT.md
@@ -107,6 +108,12 @@ export function colourGrid(): readonly (readonly string[])[] {
   return rows;
 }
 
+/** Default colour for a new session's ink (iOS system red). */
+export const DEFAULT_SCRIBBLE_COLOUR = '#FF453A' as const;
+
+/** colourGrid(), computed once. */
+export const COLOUR_GRID: readonly (readonly string[])[] = colourGrid();
+
 /** Stroke sizes (dp) offered by the toolbar's size picker. */
 export const SCRIBBLE_WIDTHS = [2, 3, 4, 6, 9, 12, 18] as const;
 
@@ -132,7 +139,12 @@ export const TOOL_RECIPES: Readonly<Record<ScribbleTool, ToolRecipe>> = {
 /** The recipe for any tool string, falling back to the pen for a tool this
  * version doesn't know. */
 export function toolRecipe(tool: string | undefined): ToolRecipe {
-  return (tool && (TOOL_RECIPES as Record<string, ToolRecipe>)[tool]) || TOOL_RECIPES.pen;
+  // Own properties only: the wire accepts any short tool string, and names
+  // like "constructor" or "__proto__" must not resolve to Object.prototype.
+  if (tool && Object.prototype.hasOwnProperty.call(TOOL_RECIPES, tool)) {
+    return TOOL_RECIPES[tool as ScribbleTool];
+  }
+  return TOOL_RECIPES.pen;
 }
 
 function rgbToHex(r: number, g: number, b: number): string {

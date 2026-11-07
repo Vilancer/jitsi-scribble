@@ -17,7 +17,7 @@ import {
 } from 'react';
 
 import {
-  SCRIBBLE_COLOURS,
+  DEFAULT_SCRIBBLE_COLOUR,
   SCRIBBLE_WIDTHS,
   type ScribbleShape,
   type ScribbleTool,
@@ -37,7 +37,7 @@ export interface ToolState {
 
 export const DEFAULT_TOOL_STATE: ToolState = {
   tool: 'pen',
-  color: SCRIBBLE_COLOURS[5] ?? '#FF453A',
+  color: DEFAULT_SCRIBBLE_COLOUR,
   width: SCRIBBLE_WIDTHS[3],
   shape: null,
 };

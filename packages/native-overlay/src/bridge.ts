@@ -26,6 +26,7 @@ export interface OverlayNative {
   remoteAppend(key: string, points: number[]): void;
   remoteEnd(key: string, kind: string | null): void;
   clear(scope: string): void;
+  clearSender(from: string): void;
   addListener(event: string, fn: (e: never) => void): { remove(): void };
 }
 
@@ -123,7 +124,9 @@ export class OutOfAppBridge {
         this.native.remoteEnd(`${from} ${frame.id}`, frame.kind ?? null);
         return;
       case MSG_CLEAR:
-        this.native.clear(from);
+        // Never this.native.clear(from): "all"/"local"/"remote" are local
+        // scope commands, and a participant id must not be read as one.
+        this.native.clearSender(from);
         return;
       default:
         return;

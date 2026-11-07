@@ -1,6 +1,6 @@
 {
   "name": "@vilancer/scribble-overlay",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Floating FaceTime-style drawing button that works outside your React Native app (Android), for @vilancer/scribble annotation sessions.",
   "type": "module",
   "main": "./dist/commonjs/index.js",

@@ -54,6 +54,10 @@ class RadialMenuView(
 
   /** Where the bubble's centre is, in this view's coordinates, and which way
    * the ring opens (+1 = to the right, -1 = to the left). */
+  /** The horizontal span of this view that is on screen, in view
+   * coordinates (the window may extend past the display edge). */
+  var visibleLeft = 0f
+  var visibleRight = Float.MAX_VALUE
   var anchorX = 0f
   var anchorY = 0f
   var direction = -1
@@ -268,7 +272,12 @@ class RadialMenuView(
     val cols = grid[0].size
     val w = cell * cols
     val h = cell * grid.size
-    val left = if (direction < 0) anchorX - innerR - btnR - 12f * d - w else anchorX + innerR + btnR + 12f * d
+    // Beside the ring when it fits, otherwise slid back inside the part of
+    // this window that is actually on screen (narrow phones).
+    val wanted = if (direction < 0) anchorX - innerR - btnR - 12f * d - w else anchorX + innerR + btnR + 12f * d
+    val minLeft = visibleLeft + 8f * d
+    val maxLeft = visibleRight - w - 8f * d
+    val left = if (maxLeft >= minLeft) wanted.coerceIn(minLeft, maxLeft) else minLeft
     val top = (anchorY - h / 2f).coerceIn(4f * d, height - h - 4f * d)
     r.set(left - 6f * d, top - 6f * d, left + w + 6f * d, top + h + 6f * d)
     fill.color = PANEL

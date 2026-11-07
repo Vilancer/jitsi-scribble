@@ -242,6 +242,8 @@ class OverlayController(
 
   fun clear(scope: String) = canvas?.clear(scope)
 
+  fun clearSender(from: String) = canvas?.clearSender(from)
+
   private fun remoteActivity() {
     // Someone is pointing at something: make sure the bubble is visible and
     // ringed, even if it had tucked itself away.
@@ -400,6 +402,8 @@ class OverlayController(
     m.direction = if (onRight) -1 else 1
     m.anchorX = (cx - p.x).toFloat()
     m.anchorY = (cy - p.y).toFloat()
+    m.visibleLeft = (-p.x).coerceAtLeast(0).toFloat()
+    m.visibleRight = minOf(p.width, size.x - p.x).toFloat()
   }
 
   // ── bubble placement ──────────────────────────────────────────────────────
