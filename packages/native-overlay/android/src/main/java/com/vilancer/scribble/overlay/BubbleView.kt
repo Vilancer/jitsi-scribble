@@ -104,6 +104,7 @@ class BubbleView(
         animate().scaleX(1f).scaleY(1f).setDuration(220)
           .setInterpolator(android.view.animation.OvershootInterpolator(3f)).start()
         if (dragging) listener.onBubbleDragEnd() else {
+          performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
           performClick()
           listener.onBubbleTap()
         }

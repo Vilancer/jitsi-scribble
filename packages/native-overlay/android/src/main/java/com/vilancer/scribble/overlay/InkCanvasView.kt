@@ -121,6 +121,17 @@ class InkCanvasView(
     invalidate()
   }
 
+  /** Trash: every stroke on screen fades out quickly (instead of blinking
+   * away). */
+  fun fadeOutAll() {
+    val now = System.currentTimeMillis()
+    val fadeStart = now - timing.holdMs
+    for (st in strokes.values) {
+      if (st.endedAt < 0 || st.endedAt > fadeStart) st.endedAt = fadeStart
+    }
+    kick()
+  }
+
   private fun enforceCaps() {
     while (strokes.size >= MAX_STROKES) strokes.remove(strokes.keys.first())
   }
