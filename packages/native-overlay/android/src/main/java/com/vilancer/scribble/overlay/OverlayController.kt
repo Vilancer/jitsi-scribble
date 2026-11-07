@@ -54,8 +54,6 @@ class OverlayController(
   private var canvas: InkCanvasView? = null
   private var menu: RadialMenuView? = null
   private var bubble: BubbleView? = null
-  private var chip: ChipView? = null
-  private var chipParams: WindowManager.LayoutParams? = null
   private var canvasParams: WindowManager.LayoutParams? = null
   private var menuParams: WindowManager.LayoutParams? = null
   private var bubbleParams: WindowManager.LayoutParams? = null
@@ -70,6 +68,14 @@ class OverlayController(
 
   private val remoteQuiet = Runnable { bubble?.remoteActive = false }
   private val tuckRunnable = Runnable { tuck() }
+  /** Drawing turns itself off after a quiet spell with the tools closed,
+   * so touches go back to the apps without hunting for a button. */
+  private val autoOff = Runnable { if (drawing && !menuOpen) setDrawing(false) }
+
+  private fun armAutoOff() {
+    main.removeCallbacks(autoOff)
+    if (drawing && !menuOpen) main.postDelayed(autoOff, AUTO_OFF_MS)
+  }
 
   private val configCallbacks = object : ComponentCallbacks {
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -148,32 +154,17 @@ class OverlayController(
       title = "ScribbleBubble"
     }
 
-    val ch = ChipView(app) { onChipTap() }.apply {
-      style = this@OverlayController.style
-      visibility = View.GONE
-    }
-    val chParams = baseParams(ch.sizePx, ch.sizePx).apply {
-      flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-      gravity = Gravity.TOP or Gravity.START
-      title = "ScribbleChip"
-    }
-
     try {
       wm.addView(ink, inkParams)
       wm.addView(ring, ringParams)
       wm.addView(bb, bbParams)
-      wm.addView(ch, chParams)
     } catch (e: Exception) {
       Log.w(TAG, "could not add overlay windows", e)
       safeRemove(ink)
       safeRemove(ring)
       safeRemove(bb)
-      safeRemove(ch)
       return false
     }
-    chip = ch
-    chipParams = chParams
     canvas = ink
     menu = ring
     bubble = bb
@@ -198,11 +189,10 @@ class OverlayController(
     }
     main.removeCallbacks(remoteQuiet)
     main.removeCallbacks(tuckRunnable)
-    safeRemove(chip)
+    main.removeCallbacks(autoOff)
     safeRemove(bubble)
     safeRemove(menu)
     safeRemove(canvas)
-    chip = null
     bubble = null
     menu = null
     canvas = null
@@ -223,17 +213,16 @@ class OverlayController(
       untuck()
       openRing()
     } else {
+      main.removeCallbacks(autoOff)
       setMenuOpen(false)
       scheduleTuck()
     }
-    updateChip()
   }
 
   fun setStyle(next: InkStyle) {
     style = next.copy()
     canvas?.style = style
     menu?.style = style
-    chip?.style = style
     bubble?.tint = style.color
   }
 
@@ -274,14 +263,18 @@ class OverlayController(
   override fun onLocalAppend(id: String, points: FloatArray) =
     emit(EVENT_STROKE, mapOf("phase" to "append", "id" to id, "points" to points.map { it.toDouble() }))
 
-  override fun onLocalEnd(id: String, kind: String) =
+  override fun onLocalEnd(id: String, kind: String) {
     emit(EVENT_STROKE, mapOf("phase" to "end", "id" to id, "kind" to kind))
+    armAutoOff()
+  }
 
-  override fun onLocalShape(id: String, points: FloatArray, style: InkStyle, frameW: Int, frameH: Int) =
+  override fun onLocalShape(id: String, points: FloatArray, style: InkStyle, frameW: Int, frameH: Int) {
+    armAutoOff()
     emit(EVENT_STROKE, styleBody(style) + mapOf(
       "phase" to "shape", "id" to id, "points" to points.map { it.toDouble() },
       "frameW" to frameW, "frameH" to frameH,
     ))
+  }
 
   override fun onStyleChanged(style: InkStyle) {
     setStyle(style)
@@ -317,25 +310,22 @@ class OverlayController(
 
   /** The user started drawing straight on the ink layer: put the ring away. */
   override fun onTouchStart() {
+    main.removeCallbacks(autoOff)
     if (menuOpen) {
       canvas?.dismissTapOnly = true
       setMenuOpen(false)
     }
   }
 
-  /** The bubble is the on/off switch for drawing. */
+  /** One tap on the bubble always shows the tools. With the tools already
+   * open, a tap closes them and stops drawing. */
   override fun onBubbleTap() {
-    if (tucked) {
-      untuck()
-      if (!drawing) setDrawing(true)
-      return
+    if (tucked) untuck()
+    when {
+      !drawing -> setDrawing(true)
+      !menuOpen -> openRing()
+      else -> setDrawing(false)
     }
-    setDrawing(!drawing)
-  }
-
-  /** The tools chip (shown while drawing, ring closed) brings the ring back. */
-  private fun onChipTap() {
-    if (drawing) openRing()
   }
 
   override fun onBubbleDrag(dx: Float, dy: Float) {
@@ -346,7 +336,6 @@ class OverlayController(
     p.x = (p.x + dx).toInt()
     p.y = (p.y + dy).toInt()
     update(b, p)
-    positionChip()
   }
 
   override fun onBubbleDragEnd() {
@@ -374,7 +363,7 @@ class OverlayController(
       val hideNow = { if (!menuOpen) m.visibility = View.GONE }
       if (animate && m.alpha > 0f) m.animateOut(hideNow) else hideNow()
     }
-    updateChip()
+    if (open) main.removeCallbacks(autoOff) else armAutoOff()
   }
 
   /** Opens the ring, first sliding the bubble away from the top/bottom edge
@@ -392,31 +381,6 @@ class OverlayController(
     }
     animateBubble(p.x, targetCy - b.sizePx / 2)
     main.postDelayed({ if (drawing) setMenuOpen(true) }, 240)
-  }
-
-  private fun updateChip() {
-    val c = chip ?: return
-    val p = chipParams ?: return
-    val show = drawing && !menuOpen && !tucked
-    if (show) positionChip()
-    c.visibility = if (show) View.VISIBLE else View.GONE
-    p.flags = if (show) p.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
-    else p.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-    update(c, p)
-  }
-
-  /** Keeps the chip just below the bubble (above it near the bottom). */
-  private fun positionChip() {
-    val c = chip ?: return
-    val p = chipParams ?: return
-    val bp = bubbleParams ?: return
-    val b = bubble ?: return
-    val size = displaySize()
-    val gap = (6f * d).toInt()
-    p.x = bp.x + (b.sizePx - c.sizePx) / 2
-    val below = bp.y + b.sizePx + gap
-    p.y = if (below + c.sizePx < size.y - (48f * d).toInt()) below else bp.y - gap - c.sizePx
-    if (c.visibility == View.VISIBLE) update(c, p)
   }
 
   /** Puts the ring window beside the bubble, opening toward the middle of
@@ -476,7 +440,6 @@ class OverlayController(
       p.x = targetX
       p.y = targetY
       update(b, p)
-      positionChip()
       return
     }
     animateBubble(targetX, targetY)
@@ -494,10 +457,7 @@ class OverlayController(
         val t = it.animatedValue as Float
         p.x = (fromX + (targetX - fromX) * t).toInt()
         p.y = (fromY + (targetY - fromY) * t).toInt()
-        if (bubble != null) {
-          update(b, p)
-          positionChip()
-        }
+        if (bubble != null) update(b, p)
       }
       start()
     }
@@ -518,8 +478,6 @@ class OverlayController(
     setSecure(canvas, canvasParams, options.hideInkFromCapture)
     setSecure(menu, menuParams, options.hideControlsFromCapture)
     setSecure(bubble, bubbleParams, options.hideControlsFromCapture)
-    setSecure(chip, chipParams, options.hideControlsFromCapture)
-    chip?.style = style
     updateCanvasTouch()
   }
 
@@ -592,6 +550,7 @@ class OverlayController(
     private const val TUCK_AFTER_MS = 4000L
     /** Long enough to see the selection ring land on what you picked. */
     private const val PICK_CLOSE_DELAY_MS = 180L
+    private const val AUTO_OFF_MS = 6000L
     /** How far the bubble's centre must be from the top/bottom edge for the
      * ring (outer radius + button) to fit. */
     private const val RING_CLEARANCE_DP = 205f
