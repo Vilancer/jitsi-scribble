@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { View, useWindowDimensions } from 'react-native';
 
-import { useOutOfAppOverlay } from '@vilancer/scribble-overlay';
+import { floatsOverOtherApps, isOutOfAppOverlaySupported, useOutOfAppOverlay } from '@vilancer/scribble-overlay';
 import {
   ScribbleClient,
   ScribbleOverlay,
@@ -85,7 +85,13 @@ function SoloBody({ ghost, pen, onLeave }: { ghost: ScribbleClient; pen: PenSwit
           <EmptyState
             icon="sparkle"
             title="Try drawing"
-            body="Tap Draw to sketch here, or turn on the floating pen and switch to any other app."
+            body={
+              floatsOverOtherApps()
+                ? 'Tap Draw to sketch here, or turn on the floating pen and switch to any other app.'
+                : isOutOfAppOverlaySupported()
+                  ? 'Tap Draw to sketch here, or turn on the floating pen and draw anywhere in the app.'
+                  : 'Tap Draw to sketch here. Your demo partner draws too.'
+            }
           />
         )}
         {/* While the floating layer is up it draws the partner's ink itself. */}
@@ -98,7 +104,9 @@ function SoloBody({ ghost, pen, onLeave }: { ghost: ScribbleClient; pen: PenSwit
       </View>
       <CallControls>
         <CallButton testID="draw" icon="pen" label="Draw" active={drawing} onPress={() => setDrawing(!drawing)} />
-        <CallButton testID="bubble" icon="bubble" label="Floating pen" active={pen.penOn} onPress={() => pen.setPenOn(!pen.penOn)} />
+        {isOutOfAppOverlaySupported() && (
+          <CallButton testID="bubble" icon="bubble" label="Floating pen" active={pen.penOn} onPress={() => pen.setPenOn(!pen.penOn)} />
+        )}
         <CallButton testID="ghost" icon="people" label="Partner" active={ghostOn} onPress={() => setGhostOn((v) => !v)} />
         <CallButton testID="leave" icon="end" label="End" danger onPress={onLeave} />
       </CallControls>

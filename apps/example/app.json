@@ -7,6 +7,22 @@
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
+    "ios": {
+      "bundleIdentifier": "com.vilancer.jitsiscribbleexample",
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "audio"
+        ],
+        "NSLocalNetworkUsageDescription": "jitsi-scribble connects to a Jitsi server on your local network for testing.",
+        "RTCAppGroupIdentifier": "group.com.vilancer.jitsiscribbleexample",
+        "RTCScreenSharingExtension": "com.vilancer.jitsiscribbleexample.broadcast"
+      },
+      "entitlements": {
+        "com.apple.security.application-groups": [
+          "group.com.vilancer.jitsiscribbleexample"
+        ]
+      }
+    },
     "android": {
       "package": "com.vilancer.jitsiscribbleexample",
       "permissions": [
@@ -27,11 +43,16 @@
         }
       ],
       "./plugins/withAndroidScreenShare",
+      "@bacons/apple-targets",
+      "./plugins/withIosPodDeploymentTarget",
       [
         "expo-build-properties",
         {
           "android": {
             "usesCleartextTraffic": true
+          },
+          "ios": {
+            "deploymentTarget": "15.1"
           }
         }
       ]

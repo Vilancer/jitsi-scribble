@@ -25,7 +25,11 @@ export interface JitsiCall {
   participants: number;
   remoteVideo: RemoteVideo | null;
   sharing: boolean;
-  startShare: () => Promise<void>;
+  /** MediaStreamTrack id of this phone's screen share (for useAwayInk). */
+  shareTrackId: string | null;
+  /** `openPicker` (iOS): opens the system broadcast sheet once the track is
+   * in the call; return false if it couldn't. */
+  startShare: (openPicker?: () => boolean) => Promise<void>;
   stopShare: () => Promise<void>;
   leave: () => void;
 }
@@ -47,6 +51,7 @@ export function useJitsiCall(server: string, room: string, displayName: string):
   const [participants, setParticipants] = useState(0);
   const [videos, setVideos] = useState<Record<string, RemoteVideo>>({});
   const [sharing, setSharing] = useState(false);
+  const [shareTrackId, setShareTrackId] = useState<string | null>(null);
   const connectionRef = useRef<any>(null);
   const conferenceRef = useRef<any>(null);
   const desktopRef = useRef<any>(null);
@@ -148,7 +153,7 @@ export function useJitsiCall(server: string, room: string, displayName: string):
     };
   }, [server, room, displayName]);
 
-  const startShare = useCallback(async () => {
+  const startShare = useCallback(async (openPicker?: () => boolean) => {
     const conf = conferenceRef.current;
     if (!conf || desktopRef.current) return;
     try {
@@ -161,12 +166,17 @@ export function useJitsiCall(server: string, room: string, displayName: string):
         if (desktopRef.current !== desktop) return;
         desktopRef.current = null;
         setSharing(false);
+        setShareTrackId(null);
         Promise.resolve(conferenceRef.current?.removeTrack(desktop))
           .catch(() => undefined)
           .finally(() => desktop.dispose?.());
       });
       await conf.addTrack(desktop);
       setSharing(true);
+      setShareTrackId(desktop.getTrack?.()?.id ?? null);
+      // iOS: the track stays black until the user starts the broadcast from
+      // the system sheet; open it now that the app is listening for frames.
+      if (openPicker && openPicker() === false) setError('screen share: this build has no broadcast extension');
     } catch (e) {
       setError(`screen share: ${String((e as Error)?.message ?? e)}`);
     }
@@ -177,6 +187,7 @@ export function useJitsiCall(server: string, room: string, displayName: string):
     const desktop = desktopRef.current;
     desktopRef.current = null;
     setSharing(false);
+    setShareTrackId(null);
     if (!desktop) return;
     try {
       await conf?.removeTrack(desktop);
@@ -192,5 +203,5 @@ export function useJitsiCall(server: string, room: string, displayName: string):
   const list = Object.values(videos);
   const remoteVideo = list.find((v) => v.isScreen) ?? list[0] ?? null;
 
-  return { status, error, conference, participants, remoteVideo, sharing, startShare, stopShare, leave };
+  return { status, error, conference, participants, remoteVideo, sharing, shareTrackId, startShare, stopShare, leave };
 }

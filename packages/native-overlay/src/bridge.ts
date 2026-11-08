@@ -17,16 +17,53 @@ import type { ScribbleClient } from '@vilancer/scribble';
 
 import type { LocalStrokeEvent, NativeShowOptions, NativeStyle } from './native.js';
 
-/** The subset of the native module the bridge drives. */
-export interface OverlayNative {
-  show(options: NativeShowOptions): Promise<boolean>;
-  hide(): void;
-  setStyle(style: NativeStyle): void;
+/** The part of a native module that draws the other side's ink. */
+export interface RemoteInkTarget {
   remoteBegin(key: string, u: number, v: number, color: string | null, width: number | null, tool: string | null): void;
   remoteAppend(key: string, points: number[]): void;
   remoteEnd(key: string, kind: string | null): void;
-  clear(scope: string): void;
   clearSender(from: string): void;
+}
+
+/** Remote frame → native ink layer. Keys are "<from> <id>", the same
+ * composite key the store uses, so two senders' ids never collide. */
+export function forwardRemoteFrame(target: RemoteInkTarget, from: string, frame: WireFrame): void {
+  switch (frame.t) {
+    case MSG_START:
+      target.remoteBegin(
+        `${from} ${frame.id}`,
+        dequantize(frame.p[0]),
+        dequantize(frame.p[1]),
+        frame.st?.c ?? null,
+        frame.st?.w ?? null,
+        frame.st?.k ?? null,
+      );
+      return;
+    case MSG_MOVE: {
+      const flat: number[] = [];
+      for (const [u, v] of frame.pts) flat.push(dequantize(u), dequantize(v));
+      target.remoteAppend(`${from} ${frame.id}`, flat);
+      return;
+    }
+    case MSG_END:
+      target.remoteEnd(`${from} ${frame.id}`, frame.kind ?? null);
+      return;
+    case MSG_CLEAR:
+      // Never a scope clear(from): "all"/"local"/"remote" are local scope
+      // commands, and a participant id must not be read as one.
+      target.clearSender(from);
+      return;
+    default:
+      return;
+  }
+}
+
+/** The subset of the native module the bridge drives. */
+export interface OverlayNative extends RemoteInkTarget {
+  show(options: NativeShowOptions): Promise<boolean>;
+  hide(): void;
+  setStyle(style: NativeStyle): void;
+  clear(scope: string): void;
   addListener(event: string, fn: (e: never) => void): { remove(): void };
 }
 
@@ -107,38 +144,9 @@ export class OutOfAppBridge {
     this.unsubscribers.length = 0;
   }
 
-  /** Remote frame → native ink layer. Keys are "<from> <id>", the same
-   * composite key the store uses, so two senders' ids never collide. */
+  /** Remote frame → native ink layer (see forwardRemoteFrame). */
   private forward(from: string, frame: WireFrame): void {
-    if (!this.visible) return;
-    switch (frame.t) {
-      case MSG_START:
-        this.native.remoteBegin(
-          `${from} ${frame.id}`,
-          dequantize(frame.p[0]),
-          dequantize(frame.p[1]),
-          frame.st?.c ?? null,
-          frame.st?.w ?? null,
-          frame.st?.k ?? null,
-        );
-        return;
-      case MSG_MOVE: {
-        const flat: number[] = [];
-        for (const [u, v] of frame.pts) flat.push(dequantize(u), dequantize(v));
-        this.native.remoteAppend(`${from} ${frame.id}`, flat);
-        return;
-      }
-      case MSG_END:
-        this.native.remoteEnd(`${from} ${frame.id}`, frame.kind ?? null);
-        return;
-      case MSG_CLEAR:
-        // Never this.native.clear(from): "all"/"local"/"remote" are local
-        // scope commands, and a participant id must not be read as one.
-        this.native.clearSender(from);
-        return;
-      default:
-        return;
-    }
+    if (this.visible) forwardRemoteFrame(this.native, from, frame);
   }
 
   private onLocalStroke(e: LocalStrokeEvent): void {
