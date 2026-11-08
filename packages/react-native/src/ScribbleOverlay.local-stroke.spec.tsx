@@ -110,7 +110,7 @@ describe("ScribbleOverlay — the actively-dragging local stroke's d is sourced 
       capturedCallbacks!.onLocalSample(60, 60);
     });
 
-    const core = getByTestId('scribble-stroke-__local__-local-0-core');
+    const core = getByTestId(/^scribble-stroke-__local__-local-\d+-core$/);
     expect(core.props.d).toBe('M 1 1 L 2 2 L 3 3'); // pathString's sentinel — proves the UI-thread source is used
     // What pathDataFor(stroke, contentRect) would have produced from the
     // (10,10)->(60,60) samples actually recorded in the store, for contrast:
@@ -144,10 +144,37 @@ describe("ScribbleOverlay — the actively-dragging local stroke's d is sourced 
       capturedCallbacks!.onLocalEnd('stroke');
     });
 
-    const core = getByTestId('scribble-stroke-__local__-local-0-core');
+    const core = getByTestId(/^scribble-stroke-__local__-local-\d+-core$/);
     // Post-end, StrokeVisual/StrokePath's store-driven pathDataFor wins —
     // pathString's now-stale sentinel value must NOT still be showing.
     expect(core.props.d).not.toBe('M 1 1 L 2 2 L 3 3');
     expect(core.props.d).toBe('M 10 10 L 60 60');
   });
 });
+
+describe('ScribbleOverlay — local stroke ids stay unique across remounts', () => {
+  async function drawOneStroke(me: string): Promise<string> {
+    const transport = createTestTransport(me);
+    const screen = await render(
+      <ScribbleOverlay drawModeEnabled={false} receiveAnnotations={true} transport={transport} frameDims={{ w: 100, h: 100 }} />,
+    );
+    await act(async () => {
+      fireEvent(screen.getByTestId('scribble-overlay-root'), 'layout', layoutEvent(100, 100));
+    });
+    mockPathString.value = 'M 10 10 L 60 60';
+    await act(async () => {
+      capturedCallbacks!.onLocalBegin(10, 10);
+      capturedCallbacks!.onLocalSample(60, 60);
+    });
+    // The overlays stay mounted: unmounting inside one test upsets this file's gesture mock.
+    const ids = screen.getAllByTestId(/^scribble-stroke-__local__-local-\d+-core$/).map((n) => n.props.testID as string);
+    return ids[ids.length - 1]!;
+  }
+
+  it('a second overlay instance does not restart at local-0', async () => {
+    const first = await drawOneStroke('me-a');
+    const second = await drawOneStroke('me-b');
+    expect(second).not.toBe(first);
+  });
+});
+
