@@ -1,6 +1,17 @@
 {
-  "platforms": ["android"],
+  "platforms": [
+    "android",
+    "apple"
+  ],
   "android": {
-    "modules": ["com.vilancer.scribble.overlay.ScribbleOverlayModule"]
+    "modules": [
+      "com.vilancer.scribble.overlay.ScribbleOverlayModule"
+    ]
+  },
+  "apple": {
+    "modules": [
+      "ScribbleOverlayModule",
+      "ScribbleAwayModule"
+    ]
   }
 }

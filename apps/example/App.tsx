@@ -7,12 +7,14 @@ import { StatusBar } from 'expo-status-bar';
 
 import { CallScreen } from './src/CallScreen';
 import { SoloScreen } from './src/SoloScreen';
-import { canDrawOverlays, isOutOfAppOverlaySupported, requestOverlayPermission } from '@vilancer/scribble-overlay';
+import { canDrawOverlays, floatsOverOtherApps, isOutOfAppOverlaySupported, requestOverlayPermission } from '@vilancer/scribble-overlay';
 
 import { colors, Icon, type PenSwitch } from './src/ui';
 
 // Default server: a local docker-jitsi-meet (see apps/example/README.md).
 const DEFAULT_SERVER = process.env.EXPO_PUBLIC_JITSI_SERVER ?? 'http://192.168.8.157:8000';
+// Shown to the other side when the name field is left empty.
+const DEFAULT_NAME = Platform.OS === 'ios' ? 'iPhone' : 'Android';
 
 type Screen = { kind: 'home' } | { kind: 'solo' } | { kind: 'call'; server: string; room: string; name: string };
 
@@ -64,7 +66,9 @@ function Home({
           <Text style={home.sub}>Point at things on each other's screens during a call. Drawings fade after a few seconds.</Text>
         </View>
 
-        <PenSwitchRow pen={pen} />
+        {/* Android: over every app. iOS: over this app (iOS lets no app draw
+            over other apps). */}
+        {isOutOfAppOverlaySupported() && <PenSwitchRow pen={pen} />}
 
         <Pressable testID="solo" style={({ pressed }) => [home.card, pressed && home.pressed]} onPress={onSolo} accessibilityRole="button">
           <View style={[home.cardIcon, { backgroundColor: colors.blue }]}>
@@ -97,7 +101,7 @@ function Home({
               testID="join"
               disabled={!canJoin}
               style={({ pressed }) => [home.join, !canJoin && { opacity: 0.4 }, pressed && home.pressed]}
-              onPress={() => onJoin({ server: server.trim(), room: room.trim(), name: name.trim() || 'Android' })}
+              onPress={() => onJoin({ server: server.trim(), room: room.trim(), name: name.trim() || DEFAULT_NAME })}
               accessibilityRole="button"
             >
               <Text style={home.joinText}>Join</Text>
@@ -124,7 +128,13 @@ function PenSwitchRow({ pen }: { pen: PenSwitch }) {
       <View style={{ flex: 1 }}>
         <Text style={home.cardTitle}>Floating pen</Text>
         <Text style={home.cardBody}>
-          {pen.penOn ? 'On: during practice and calls a pen floats over every app. Drag it to the ✕ to hide it.' : 'Off. Turn on to draw over any app during practice and calls.'}
+          {floatsOverOtherApps()
+            ? pen.penOn
+              ? 'On: during practice and calls a pen floats over every app. Drag it to the ✕ to hide it.'
+              : 'Off. Turn on to draw over any app during practice and calls.'
+            : pen.penOn
+              ? 'On: during practice and calls a pen floats over the app. Drag it to the ✕ to hide it.'
+              : 'Off. Turn on for a pen that floats over the app during practice and calls.'}
         </Text>
       </View>
       <Switch

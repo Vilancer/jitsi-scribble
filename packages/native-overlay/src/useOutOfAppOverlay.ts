@@ -1,6 +1,8 @@
-// useOutOfAppOverlay(): the floating drawing button that works OUTSIDE the
-// app (Android). Use it inside <ScribbleProvider>, typically on the screen
-// that shares the phone's screen:
+// useOutOfAppOverlay(): the floating pen. On Android it works OUTSIDE the
+// app, over every other app; on iOS (which lets no app draw over other apps)
+// it floats over this app's own screens and hides while the app is in the
+// background. Use it inside <ScribbleProvider>, typically on the screen that
+// shares the phone's screen:
 //
 //   const overlay = useOutOfAppOverlay({ enabled: isSharingScreen });
 //   if (overlay.supported && !overlay.permitted) <Button onPress={overlay.requestPermission} />
@@ -17,14 +19,16 @@ import { COLOUR_GRID, SCRIBBLE_COLOURS, SCRIBBLE_WIDTHS } from '@vilancer/scribb
 import { FADE_MS, HOLD_MS, STALE_MS } from '@vilancer/scribble-protocol/core';
 
 import { OutOfAppBridge } from './bridge.js';
-import { Native, type NativeStyle } from './native.js';
+import { FLOATS_OVER_OTHER_APPS, Native, type NativeStyle } from './native.js';
 
 export interface OutOfAppOverlayOptions {
   /** Master switch, e.g. "while I'm sharing my screen". Default true. */
   enabled?: boolean;
   /** 'background' (default): the bubble appears only while the app is in
    * the background and the in-app UI takes over when the user comes back.
-   * 'always': also over this app. */
+   * 'always': also over this app. On iOS the pen can only float over this
+   * app, so it shows only with 'always' (use useAwayInk() for the
+   * background there). */
   showWhen?: 'background' | 'always';
   /** Keep the ink layer out of screenshots and screen recordings, so the
    * remote side doesn't see its own ink echoed back in the shared screen.
@@ -41,8 +45,11 @@ export interface OutOfAppOverlayOptions {
 }
 
 export interface OutOfAppOverlayState {
-  /** False on iOS/web, or if the native module isn't in this build. */
+  /** False on web, or if the native module isn't in this build. */
   supported: boolean;
+  /** True where the pen floats over other apps (Android); false where it
+   * floats over this app only (iOS). */
+  overOtherApps: boolean;
   /** "Display over other apps" is granted. */
   permitted: boolean;
   /** Opens the system settings screen to grant the permission. */
@@ -125,8 +132,11 @@ export function useOutOfAppOverlay(options: OutOfAppOverlayOptions = {}): OutOfA
     };
   }, [client]);
 
-  const wantVisible =
-    supported && permitted && enabled && !dismissed && client !== null && (showWhen === 'always' || appState !== 'active');
+  // iOS: only over this app, so only while it is in the foreground.
+  const placement = FLOATS_OVER_OTHER_APPS
+    ? showWhen === 'always' || appState !== 'active'
+    : showWhen === 'always' && appState === 'active';
+  const wantVisible = supported && permitted && enabled && !dismissed && client !== null && placement;
 
   useEffect(() => {
     const bridge = bridgeRef.current;
@@ -164,5 +174,5 @@ export function useOutOfAppOverlay(options: OutOfAppOverlayOptions = {}): OutOfA
     Native?.setDrawing(on);
   }, []);
 
-  return { supported, permitted, requestPermission, visible, drawing, setDrawing };
+  return { supported, overOtherApps: FLOATS_OVER_OTHER_APPS, permitted, requestPermission, visible, drawing, setDrawing };
 }

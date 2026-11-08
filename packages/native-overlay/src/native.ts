@@ -1,6 +1,7 @@
-// Typed handle on the Android native module. `null` wherever the native code
-// isn't there (iOS, web, Expo Go, or an app built before this package was
-// added), so every caller degrades to "not supported" instead of crashing.
+// Typed handle on the floating-pen native module (Android: over every app;
+// iOS: over this app only). `null` wherever the native code isn't there (web,
+// Expo Go, or an app built before this package was added), so every caller
+// degrades to "not supported" instead of crashing.
 import { Platform } from 'react-native';
 import { requireOptionalNativeModule, type NativeModule } from 'expo';
 
@@ -52,4 +53,10 @@ declare class ScribbleOverlayNative extends NativeModule<OverlayEvents> {
 }
 
 export const Native: ScribbleOverlayNative | null =
-  Platform.OS === 'android' ? requireOptionalNativeModule<ScribbleOverlayNative>('ScribbleOverlay') : null;
+  Platform.OS === 'android' || Platform.OS === 'ios'
+    ? requireOptionalNativeModule<ScribbleOverlayNative>('ScribbleOverlay')
+    : null;
+
+/** Android draws over every app; iOS allows no app to, so there the pen
+ * floats over this app's own screens only. */
+export const FLOATS_OVER_OTHER_APPS = Platform.OS === 'android';

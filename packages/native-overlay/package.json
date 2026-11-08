@@ -1,7 +1,7 @@
 {
   "name": "@vilancer/scribble-overlay",
-  "version": "0.2.3",
-  "description": "Floating FaceTime-style drawing button that works outside your React Native app (Android), for @vilancer/scribble annotation sessions.",
+  "version": "0.3.0",
+  "description": "Floating FaceTime-style drawing pen for @vilancer/scribble calls: over every app on Android, over your app on iOS, plus iOS picture-in-picture ink for a sharer away from the app.",
   "type": "module",
   "main": "./dist/commonjs/index.js",
   "module": "./dist/module/index.js",
@@ -20,6 +20,8 @@
     "src",
     "android/build.gradle",
     "android/src",
+    "ios/*.swift",
+    "ios/*.podspec",
     "expo-module.config.json",
     "!**/*.tsbuildinfo",
     "!**/*.spec.*"

@@ -2,5 +2,5 @@
 # never commit the generated native projects or their build output.
 .expo/
 android/
-ios/
+/ios/
 web-build/
