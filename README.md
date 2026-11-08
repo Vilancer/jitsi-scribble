@@ -92,8 +92,12 @@ function Stage() {
 }
 ```
 
-Pass `p2p: { enabled: false }` when you create the Jitsi conference. Annotation travels on the
-bridge's data channel, which a peer-to-peer call doesn't have.
+Peer-to-peer calls work: you don't need to turn P2P off. Annotation travels on the bridge's
+data channel, and lib-jitsi-meet keeps that channel open after a 1:1 call switches to P2P.
+Checked on 8 Nov 2026 with docker-jitsi-meet, strokes going both ways, while `isP2PActive()` was true.
+`jitsi()` still logs a one-time console warning when it can't confirm P2P is off. That warning
+predates the check and is harmless; pass `{ p2pEnabled: false }` to silence it. To check your own
+deployment, run `PEER_P2P=1 node apps/e2e/scripts/peer.mjs` against it and read the `state` lines.
 
 ### Other call SDKs
 
