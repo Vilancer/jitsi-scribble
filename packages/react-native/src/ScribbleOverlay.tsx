@@ -250,6 +250,12 @@ function StrokeVisual(props: StrokeVisualProps) {
   return props.stroke.kind === 'tap' ? <TapRing {...props} /> : <StrokePath {...props} />;
 }
 
+// Local stroke ids are numbered for the whole app, not per mount. A host that remounts the overlay
+// (Genius does, to mount gesture-handler's root only while drawing) would otherwise restart at
+// `local-0` while the other side still holds the last `local-0`, and the receiver drops the new
+// stroke's start as a duplicate.
+let localStrokeSeq = 0;
+
 export function ScribbleOverlay(props: ScribbleOverlayProps) {
   const ctx = useOptionalScribble();
   const { drawModeEnabled, receiveAnnotations = true, tools: toolsProp, ...sessionOptions } = props;
@@ -281,7 +287,6 @@ export function ScribbleOverlay(props: ScribbleOverlayProps) {
     [session.onLayout],
   );
 
-  const strokeCounterRef = useRef(0);
   const currentLocalIdRef = useRef<string | null>(null);
   const [activeLocalId, setActiveLocalId] = useState<string | null>(null);
 
@@ -309,7 +314,7 @@ export function ScribbleOverlay(props: ScribbleOverlayProps) {
         setShapePreviewing(true);
         return;
       }
-      const id = `local-${strokeCounterRef.current++}`;
+      const id = `local-${localStrokeSeq++}`;
       currentLocalIdRef.current = id;
       setActiveLocalId(id);
       session.beginLocal(id, currentStyle());
@@ -339,7 +344,7 @@ export function ScribbleOverlay(props: ScribbleOverlayProps) {
         shapeDragRef.current = null;
         setShapePreviewing(false);
         if (kind === 'stroke' && Math.hypot(drag.b.x - drag.a.x, drag.b.y - drag.a.y) >= 12) {
-          const id = `local-${strokeCounterRef.current++}`;
+          const id = `local-${localStrokeSeq++}`;
           session.beginLocal(id, currentStyle());
           for (const p of shapePoints(drag.shape, drag.a, drag.b)) session.appendLocal(id, p.x, p.y);
           session.endLocal(id, 'stroke');
