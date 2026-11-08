@@ -25,7 +25,8 @@ an Expo module). On Android it adds the `SYSTEM_ALERT_WINDOW` permission; iOS ne
 `useAwayInk()` covers a sharer who has left the app, where iOS allows no drawing:
 
 - a picture-in-picture window with their shared screen and the other side's live ink (view only),
-- a notification with sound / vibration once per burst of drawing,
+- a vibration once per burst of drawing, plus an entry in Notification Center (iOS shows no
+  banner while the screen is being shared: "Posting not permitted during screen sharing"),
 - a replay of that ink over a snapshot of the screen when they come back.
 
 ```tsx

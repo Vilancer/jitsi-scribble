@@ -3,7 +3,8 @@
 //
 //   - a picture-in-picture window: their own screen with the other side's
 //     ink on it, live (opens by itself when the app goes to the background);
-//   - a notification with sound/vibration when someone starts drawing;
+//   - a vibration (and a Notification Center entry) when someone starts
+//     drawing; iOS shows no banner while the screen is being shared;
 //   - when they come back, each burst of ink replayed over a snapshot of
 //     what their screen showed at that moment.
 //

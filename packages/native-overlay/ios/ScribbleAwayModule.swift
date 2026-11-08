@@ -4,6 +4,8 @@
 //   - a local notification (sound / vibration) when someone starts drawing,
 //   - snapshots of their screen, so ink received while away can be replayed
 //     over what they were looking at when they come back.
+import AudioToolbox
+import AVFoundation
 import ExpoModulesCore
 import UIKit
 import UserNotifications
@@ -35,12 +37,25 @@ public final class ScribbleAwayModule: Module {
     }
 
     Function("notify") { (title: String, body: String) in
+      // iOS shows no banner while the screen is being shared ("Posting not
+      // permitted during screen sharing"), which is exactly when this runs.
+      // The notification still lands in Notification Center; the vibration
+      // is what the user actually feels. The app is running (a call keeps
+      // it alive), and a recording audio session mutes system haptics
+      // unless it allows them.
+      try? AVAudioSession.sharedInstance().setAllowHapticsAndSystemSoundsDuringRecording(true)
+      AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
+      awayLog("vibrated for a new burst of ink")
+      AwayNotifications.shared.install()
       let content = UNMutableNotificationContent()
       content.title = title
       content.body = body
       content.sound = .default
-      if #available(iOS 15.0, *) { content.interruptionLevel = .timeSensitive }
-      let request = UNNotificationRequest(identifier: "scribble-away", content: content, trigger: nil)
+      // One thread so they stack, but a new id each time: re-adding an id
+      // that is still in Notification Center only updates it, silently.
+      content.threadIdentifier = "scribble-away"
+      if #available(iOS 15.0, *) { content.interruptionLevel = .active }
+      let request = UNNotificationRequest(identifier: "\(AwayNotifications.idPrefix)\(UUID().uuidString)", content: content, trigger: nil)
       UNUserNotificationCenter.current().add(request)
     }
 

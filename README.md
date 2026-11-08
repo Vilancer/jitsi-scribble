@@ -14,8 +14,8 @@ not a whiteboard.
   too. When you're not using it, it fades and tucks into the screen edge. On **Android** it floats
   over every app; on **iOS** over your app's own screens (iOS lets no app draw over other apps).
 - **Away from the app (iOS, optional):** a picture-in-picture window showing your shared screen
-  with the other side's ink on it, a notification when they start drawing, and a replay of what
-  they drew when you come back.
+  with the other side's ink on it, a vibration when they start drawing, and a replay of what they
+  drew when you come back.
 - **Call SDKs plug in as transport providers.** Jitsi (`lib-jitsi-meet`) is the first: strokes
   ride the conference's own bridge data channel, so there's no extra server.
 
@@ -110,7 +110,8 @@ A transport provider is any object implementing `ScribbleTransport` (`send`, `su
   (`useOutOfAppOverlay().overOtherApps` is `false`, and it shows only with `showWhen: 'always'`).
   This is a deliberate, documented difference, not a gap that will be closed. For a sharer who
   has left the app, `useAwayInk()` shows the other side's ink in a picture-in-picture window
-  (view only: iOS passes no touches into PiP), sends a notification when they start drawing, and
+  (view only: iOS passes no touches into PiP), vibrates and posts to Notification Center when they
+  start drawing (iOS shows no banner during a screen share), and
   replays it over a snapshot of the screen when the user comes back. The PiP window is part of
   the screen, so the broadcast captures it too.
 - Some Android skins keep invisible system overlays above every app overlay. On ColorOS
