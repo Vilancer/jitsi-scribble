@@ -6,7 +6,9 @@
 //   PEER_SERVER=https://192.168.8.157:8443 PEER_ROOM=scribble-demo node scripts/peer.mjs
 //
 // Env: PEER_DRAW_EVERY_MS (0 = never draw), PEER_DURATION_MS, PEER_SHOTS,
-// PEER_VIDEO=desktop to pretend the fake camera is a screen share.
+// PEER_VIDEO=desktop to pretend the fake camera is a screen share, PEER_P2P=1 to let the 1:1
+// call go peer-to-peer (the state log then shows the channel mode and whether P2P is active),
+// PEER_NAME for the display name.
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,10 +36,10 @@ page.on('pageerror', (e) => log('pageerror', { message: String(e) }));
 
 const hash = [
   'config.prejoinConfig.enabled=false',
-  'config.p2p.enabled=false',
+  `config.p2p.enabled=${process.env.PEER_P2P ? 'true' : 'false'}`,
   'config.startWithAudioMuted=true',
   'config.startWithVideoMuted=false',
-  'userInfo.displayName=%22Browser%22',
+  `userInfo.displayName=%22${encodeURIComponent(process.env.PEER_NAME ?? 'Browser')}%22`,
 ].join('&');
 await page.goto(`${SERVER}/${ROOM}#${hash}`, { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => Boolean(window.APP?.store?.getState()?.['features/base/conference']?.conference), undefined, {
@@ -98,7 +100,7 @@ while (Date.now() - started < DURATION) {
   if (DRAW_EVERY > 0 && Date.now() - lastDraw > DRAW_EVERY) {
     log('state', await page.evaluate(() => {
       const c = window.APP.store.getState()['features/base/conference'].conference;
-      return { transport: window.__t.state, channelOpen: Boolean(c?.rtc?._channel?.isOpen?.()), participants: c.getParticipants().map((p) => p.getId()) };
+      return { transport: window.__t.state, channelOpen: Boolean(c?.rtc?._channel?.isOpen?.()), channelMode: c?.rtc?._channel?.mode, p2p: c.isP2PActive?.(), participants: c.getParticipants().map((p) => p.getId()) };
     }));
     lastDraw = Date.now();
     await drawTestShape();
