@@ -17,7 +17,7 @@ final class AwayPip: NSObject, AVPictureInPictureControllerDelegate {
   private let video = SampleBufferView(frame: .zero)
   private let content = AVPictureInPictureVideoCallViewController()
   private var controller: AVPictureInPictureController?
-  private var foregroundObserver: NSObjectProtocol?
+  private var foregroundObservers: [NSObjectProtocol] = []
 
   static var isSupported: Bool { AVPictureInPictureController.isPictureInPictureSupported() }
 
@@ -53,11 +53,15 @@ final class AwayPip: NSObject, AVPictureInPictureControllerDelegate {
       c.delegate = self
       controller = c
     }
-    if foregroundObserver == nil {
-      // Back in the app: the in-app UI takes over.
-      foregroundObserver = NotificationCenter.default.addObserver(
-        forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
-      ) { [weak self] _ in self?.controller?.stopPictureInPicture() }
+    if foregroundObservers.isEmpty {
+      // Back in the app: the in-app UI takes over. Both notifications,
+      // because returning via the app switcher or a PiP tap doesn't always
+      // post willEnterForeground; stopping twice is harmless.
+      for name in [UIApplication.willEnterForegroundNotification, UIApplication.didBecomeActiveNotification] {
+        foregroundObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+          self?.stopIfActive()
+        })
+      }
     }
     return true
   }
@@ -66,9 +70,14 @@ final class AwayPip: NSObject, AVPictureInPictureControllerDelegate {
     controller?.stopPictureInPicture()
     controller?.delegate = nil
     controller = nil
-    if let foregroundObserver { NotificationCenter.default.removeObserver(foregroundObserver) }
-    foregroundObserver = nil
+    for o in foregroundObservers { NotificationCenter.default.removeObserver(o) }
+    foregroundObservers.removeAll()
     ink.clear()
+  }
+
+  private func stopIfActive() {
+    guard let c = controller, c.isPictureInPictureActive else { return }
+    c.stopPictureInPicture()
   }
 
   func show(frame: CVPixelBuffer) {
@@ -78,6 +87,11 @@ final class AwayPip: NSObject, AVPictureInPictureControllerDelegate {
   // MARK: AVPictureInPictureControllerDelegate
 
   func pictureInPictureControllerDidStartPictureInPicture(_ c: AVPictureInPictureController) {
+    // The user came back while the window was still opening.
+    if UIApplication.shared.applicationState == .active {
+      c.stopPictureInPicture()
+      return
+    }
     // The window is far smaller than the screen; keep stroke widths in
     // proportion to the picture.
     ink.widthScale = max(0.35, content.view.bounds.width / max(1, UIScreen.main.bounds.width))
