@@ -60,6 +60,14 @@ class RadialMenuView(
   var visibleRight = Float.MAX_VALUE
   var anchorX = 0f
   var anchorY = 0f
+  /** Scale (at most 1) that fits the ring on a short display (a phone in
+   * landscape). The ring is drawn scaled around the anchor and touches are
+   * mapped back the same way. */
+  var fit = 1f
+    set(value) {
+      field = value
+      invalidate()
+    }
   var direction = -1
     set(value) {
       field = value
@@ -170,6 +178,17 @@ class RadialMenuView(
   }
 
   override fun onDraw(c: Canvas) {
+    c.save()
+    c.scale(fit, fit, anchorX, anchorY)
+    drawMenu(c)
+    c.restore()
+  }
+
+  /** View coordinates → the unscaled space the ring is laid out in. */
+  private fun unfitX(x: Float) = anchorX + (x - anchorX) / fit
+  private fun unfitY(y: Float) = anchorY + (y - anchorY) / fit
+
+  private fun drawMenu(c: Canvas) {
     hits.clear()
     val inner = listOf(Section.TOOL, Section.SHAPE, Section.COLOUR, Section.SIZE, null, null)
     val n = inner.size
@@ -275,10 +294,10 @@ class RadialMenuView(
     // Beside the ring when it fits, otherwise slid back inside the part of
     // this window that is actually on screen (narrow phones).
     val wanted = if (direction < 0) anchorX - innerR - btnR - 12f * d - w else anchorX + innerR + btnR + 12f * d
-    val minLeft = visibleLeft + 8f * d
-    val maxLeft = visibleRight - w - 8f * d
+    val minLeft = unfitX(visibleLeft) + 8f * d
+    val maxLeft = unfitX(visibleRight) - w - 8f * d
     val left = if (maxLeft >= minLeft) wanted.coerceIn(minLeft, maxLeft) else minLeft
-    val top = (anchorY - h / 2f).coerceIn(4f * d, height - h - 4f * d)
+    val top = (anchorY - h / 2f).coerceIn(unfitY(0f) + 4f * d, unfitY(height.toFloat()) - h - 4f * d)
     r.set(left - 6f * d, top - 6f * d, left + w + 6f * d, top + h + 6f * d)
     fill.color = PANEL
     c.drawRoundRect(r, 14f * d, 14f * d, fill)
@@ -351,7 +370,7 @@ class RadialMenuView(
   @SuppressLint("ClickableViewAccessibility")
   override fun onTouchEvent(e: MotionEvent): Boolean {
     if (e.actionMasked == MotionEvent.ACTION_DOWN) {
-      pressedIndex = hits.indexOfLast { hypot(e.x - it.x, e.y - it.y) <= it.radius }
+      pressedIndex = hits.indexOfLast { hypot(unfitX(e.x) - it.x, unfitY(e.y) - it.y) <= it.radius }
       forwarding = pressedIndex < 0
     }
     if (forwarding) {
@@ -360,7 +379,7 @@ class RadialMenuView(
       return true
     }
     if (e.actionMasked == MotionEvent.ACTION_UP) {
-      val idx = hits.indexOfLast { hypot(e.x - it.x, e.y - it.y) <= it.radius }
+      val idx = hits.indexOfLast { hypot(unfitX(e.x) - it.x, unfitY(e.y) - it.y) <= it.radius }
       if (idx >= 0 && idx == pressedIndex) {
         performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
         performClick()

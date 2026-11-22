@@ -424,7 +424,7 @@ class OverlayController(
     val p = bubbleParams ?: return
     val b = bubble ?: return
     val size = displaySize()
-    val safe = (RING_CLEARANCE_DP * d).toInt()
+    val safe = (RING_CLEARANCE_DP * d * ringFit(size)).toInt()
     val cy = p.y + b.sizePx / 2
     val targetCy = cy.coerceIn(safe, maxOf(safe, size.y - safe))
     if (targetCy == cy) {
@@ -450,6 +450,7 @@ class OverlayController(
     p.x = if (onRight) cx + overlap - p.width else cx - overlap
     p.y = (cy - p.height / 2).coerceIn(0, maxOf(0, size.y - p.height))
     m.direction = if (onRight) -1 else 1
+    m.fit = ringFit(size)
     m.anchorX = (cx - p.x).toFloat()
     m.anchorY = (cy - p.y).toFloat()
     m.visibleLeft = (-p.x).coerceAtLeast(0).toFloat()
@@ -579,6 +580,10 @@ class OverlayController(
       PixelFormat.TRANSLUCENT,
     )
   }
+
+  /** The ring needs RING_CLEARANCE_DP above and below the bubble. On a display
+   * shorter than that (a phone in landscape) it is drawn smaller to fit. */
+  private fun ringFit(size: Point): Float = min(1f, size.y / (2f * RING_CLEARANCE_DP * d))
 
   @Suppress("DEPRECATION")
   private fun displaySize(): Point {
